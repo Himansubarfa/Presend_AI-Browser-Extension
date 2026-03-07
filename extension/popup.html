@@ -1,13 +1,40 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <meta charset="utf-8">
-    <title>PreSendAI</title>
-    <style>
-      body { width: 200px; padding: 10px; font-family: sans-serif; }
-    </style>
-  </head>
-  <body>
-    <h3>PreSendAI</h3>
-  </body>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      width: 200px;
+      padding: 10px;
+      font-family: Arial, sans-serif;
+    }
+    h3 {
+      margin: 0 0 10px;
+      font-size: 16px;
+    }
+    .status {
+      font-size: 14px;
+      color: green;
+    }
+    button {
+      width: 100%;
+      padding: 8px;
+      margin-top: 10px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+  </style>
+</head>
+<body>
+  <h3>PreSendAI</h3>
+  <div class="status">🟢 Active</div>
+  <button id="toggle">Disable</button>
+  <script src="popup.js"></script>
+</body>
 </html>
