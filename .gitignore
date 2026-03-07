@@ -11,3 +11,5 @@ __pycache__/
 
 # Development run file 
  run.py
+
+ **/benchmark.py

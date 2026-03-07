@@ -2054,13 +2054,38 @@ PRIORITY_MAP = {
 }
 
 
+# def _get_spacy_model():
+#     """Lazy-load the spaCy model."""
+#     global _nlp
+#     if _nlp is None:
+#         logger.info("Loading spaCy model 'en_core_web_sm'")
+#         try:
+#             _nlp = spacy.load("en_core_web_sm")
+#         except OSError:
+#             logger.error("SpaCy model not found. Run: python -m spacy download en_core_web_sm")
+#             raise
+#     return _nlp
+
+# def _get_spacy_model():
+#     global _nlp
+#     if _nlp is None:
+#         logger.info("Loading spaCy model 'en_core_web_sm' (NER only)")
+#         # Disable parser and tagger – we only need NER
+#         _nlp = spacy.load("en_core_web_sm", disable=["parser", "tagger"])
+#     return _nlp
+
+
 def _get_spacy_model():
-    """Lazy-load the spaCy model."""
+    """Lazy-load the spaCy model with only NER enabled (and its dependencies)."""
     global _nlp
     if _nlp is None:
-        logger.info("Loading spaCy model 'en_core_web_sm'")
+        logger.info("Loading spaCy model 'en_core_web_sm' (NER only)")
         try:
-            _nlp = spacy.load("en_core_web_sm")
+            # Disable all components except those required for NER (tok2vec, ner)
+            _nlp = spacy.load(
+                "en_core_web_sm",
+                disable=["tagger", "parser", "attribute_ruler", "lemmatizer"]
+            )
         except OSError:
             logger.error("SpaCy model not found. Run: python -m spacy download en_core_web_sm")
             raise
