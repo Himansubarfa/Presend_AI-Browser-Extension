@@ -1,0 +1,10 @@
+# Python virtual environment and compiled files
+venv/
+__pycache__/
+
+# Environment variables and secrets
+.env
+
+# Logs and system clutter
+*.log
+.DS_Store

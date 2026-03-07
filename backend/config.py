@@ -1,0 +1,2 @@
+# config.py
+MAX_TEXT_LENGTH = 10000
