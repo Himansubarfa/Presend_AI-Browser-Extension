@@ -8,3 +8,6 @@ __pycache__/
 # Logs and system clutter
 *.log
 .DS_Store
+
+# Development run file 
+ run.py
