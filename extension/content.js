@@ -14,44 +14,407 @@
 
 // content.js – Detect and monitor editable fields
 
-console.log("🔒 PreSendAI content script loaded – Day 12");
+// console.log("🔒 PreSendAI content script loaded – Day 12");
 
-// Store attached fields to avoid duplicate listeners
+// // Store attached fields to avoid duplicate listeners
+// const trackedFields = new WeakSet();
+
+// /**
+//  * Check if an element is an editable text field.
+//  * Returns true for <input> (excluding buttons, checkboxes, etc.), <textarea>, and contenteditable elements.
+//  */
+// function isEditableField(element) {
+//   if (!element || !element.nodeType || element.nodeType !== Node.ELEMENT_NODE) return false;
+//   const tag = element.tagName.toLowerCase();
+//   // Input elements (only text-like types)
+//   if (tag === 'input') {
+//     const type = element.type.toLowerCase();
+//     return ['text', 'search', 'tel', 'url', 'email', 'password', 'number'].includes(type);
+//   }
+//   // Textarea
+//   if (tag === 'textarea') return true;
+//   // Contenteditable (any element with contenteditable="true")
+//   if (element.isContentEditable) return true;
+//   return false;
+// }
+
+// /**
+//  * Handle input event on an editable field.
+//  * Logs the current value for now – later we'll send to backend and mask.
+//  */
+// function onInput(event) {
+//   const target = event.target;
+//   let content = '';
+//   if (target.tagName.toLowerCase() === 'input' || target.tagName.toLowerCase() === 'textarea') {
+//     content = target.value;
+//   } else if (target.isContentEditable) {
+//     content = target.innerText;
+//   }
+//   console.log(`✏️ Typing in ${target.tagName}:`, content);
+//   // TODO: Later we'll send to backend and replace with masked text
+// }
+
+// /**
+//  * Attach input listener to an editable field if not already tracked.
+//  */
+// function attachListener(field) {
+//   if (!trackedFields.has(field)) {
+//     field.addEventListener('input', onInput);
+//     trackedFields.add(field);
+//     console.log(`👂 Listening to`, field);
+//   }
+// }
+
+// /**
+//  * Find all editable fields on the current page and attach listeners.
+//  */
+// function scanAndAttach() {
+//   // Get all input, textarea, and any element with contenteditable
+//   const inputs = document.querySelectorAll('input[type="text"], input[type="search"], input[type="tel"], input[type="url"], input[type="email"], input[type="password"], input[type="number"], textarea, [contenteditable="true"]');
+//   inputs.forEach(attachListener);
+// }
+
+// // Run initial scan when DOM is ready
+// if (document.readyState === 'loading') {
+//   document.addEventListener('DOMContentLoaded', scanAndAttach);
+// } else {
+//   scanAndAttach();
+// }
+
+// // Optional: Also handle dynamically added fields via MutationObserver (will be added in Day 16)
+// // For now, just initial scan.
+
+
+
+
+// Day 13 updating and connecting the forntend with the backend 
+// content.js – Day 13: Connect to backend and replace text
+
+// console.log("🔒 PreSendAI content script loaded – Day 13");
+
+// // Configuration
+// const BACKEND_URL = "http://localhost:5000/scan"; // Change in production
+// const DEBOUNCE_DELAY = 600; // ms
+
+// // Track fields to avoid duplicate listeners and store last sent text
+// const trackedFields = new WeakSet();
+// const lastSentText = new WeakMap(); // field -> last text sent to backend
+// let isUpdating = false; // flag to ignore input events caused by our own replacement
+
+// /**
+//  * Check if an element is an editable text field.
+//  */
+// function isEditableField(element) {
+//   if (!element || !element.nodeType || element.nodeType !== Node.ELEMENT_NODE) return false;
+//   const tag = element.tagName.toLowerCase();
+//   if (tag === 'input') {
+//     const type = element.type.toLowerCase();
+//     return ['text', 'search', 'tel', 'url', 'email', 'password', 'number'].includes(type);
+//   }
+//   if (tag === 'textarea') return true;
+//   if (element.isContentEditable) return true;
+//   return false;
+// }
+
+// /**
+//  * Get the current text content from an editable field.
+//  */
+// function getFieldText(field) {
+//   const tag = field.tagName.toLowerCase();
+//   if (tag === 'input' || tag === 'textarea') {
+//     return field.value;
+//   } else if (field.isContentEditable) {
+//     return field.innerText; // or textContent; innerText respects line breaks
+//   }
+//   return '';
+// }
+
+// /**
+//  * Set the text content of an editable field, preserving cursor if possible (basic).
+//  * For contenteditable, we replace innerText – cursor will jump to end (to be fixed later).
+//  */
+// function setFieldText(field, newText) {
+//   const tag = field.tagName.toLowerCase();
+//   if (tag === 'input' || tag === 'textarea') {
+//     field.value = newText;
+//   } else if (field.isContentEditable) {
+//     field.innerText = newText;
+//   }
+// }
+
+// /**
+//  * Debounce helper: returns a function that delays invoking `func` until after `wait` ms.
+//  */
+// function debounce(func, wait) {
+//   let timeout;
+//   return function executedFunction(...args) {
+//     const later = () => {
+//       clearTimeout(timeout);
+//       func(...args);
+//     };
+//     clearTimeout(timeout);
+//     timeout = setTimeout(later, wait);
+//   };
+// }
+
+// /**
+//  * Send text to backend and update the field with masked result.
+//  */
+// async function maskAndReplace(field, text) {
+//   if (!text.trim()) return; // don't send empty text
+
+//   try {
+//     const response = await fetch(BACKEND_URL, {
+//       method: 'POST',
+//       headers: { 'Content-Type': 'application/json' },
+//       body: JSON.stringify({ text })
+//     });
+
+//     if (!response.ok) {
+//       console.error('Backend error:', response.status, response.statusText);
+//       return;
+//     }
+
+//     const data = await response.json();
+//     if (data.status === 'ok' && data.masked && data.masked !== text) {
+//       // Use flag to ignore the input event that will be triggered by our replacement
+//       isUpdating = true;
+//       setFieldText(field, data.masked);
+//       isUpdating = false;
+//       // Update last sent text to avoid re-sending the masked version
+//       lastSentText.set(field, data.masked);
+//     } else if (data.status === 'error') {
+//       console.warn('Backend processing error:', data.message);
+//     }
+//   } catch (error) {
+//     console.error('Failed to connect to backend:', error);
+//   }
+// }
+
+// // Create a debounced version of maskAndReplace per field? Actually we can share a single debouncer
+// // but we need to pass the field. We'll create a closure for each field inside the input handler.
+
+// /**
+//  * Handle input event on an editable field.
+//  */
+// function onInput(event) {
+//   if (isUpdating) return; // ignore events triggered by our own replacement
+
+//   const field = event.target;
+//   const currentText = getFieldText(field);
+//   const lastSent = lastSentText.get(field);
+
+//   // Skip if text is unchanged since last sent
+//   if (currentText === lastSent) return;
+
+//   // Store as last sent optimistically? We'll store after successful replacement.
+//   // Actually we want to avoid sending again until the user types more.
+//   // We'll store after API call, but also avoid sending while debouncing.
+//   // For now, we just call the debounced function.
+
+//   // Create a debounced function for this field if not already created
+//   if (!field._debouncedMask) {
+//     field._debouncedMask = debounce((field, text) => {
+//       maskAndReplace(field, text);
+//     }, DEBOUNCE_DELAY);
+//   }
+
+//   // Cancel any pending call for this field and schedule new one
+//   field._debouncedMask(field, currentText);
+// }
+
+// /**
+//  * Attach input listener to an editable field if not already tracked.
+//  */
+// function attachListener(field) {
+//   if (!trackedFields.has(field)) {
+//     field.addEventListener('input', onInput);
+//     trackedFields.add(field);
+//     console.log('👂 Listening to', field);
+//   }
+// }
+
+// /**
+//  * Scan page for editable fields and attach listeners.
+//  */
+// function scanAndAttach() {
+//   const selectors = [
+//     'input[type="text"]',
+//     'input[type="search"]',
+//     'input[type="tel"]',
+//     'input[type="url"]',
+//     'input[type="email"]',
+//     'input[type="password"]',
+//     'input[type="number"]',
+//     'textarea',
+//     '[contenteditable="true"]'
+//   ];
+//   document.querySelectorAll(selectors.join(',')).forEach(attachListener);
+// }
+
+// // Initial scan
+// if (document.readyState === 'loading') {
+//   document.addEventListener('DOMContentLoaded', scanAndAttach);
+// } else {
+//   scanAndAttach();
+// }
+
+// // Optional: observe dynamically added fields (will be added in Day 16)
+
+
+
+// DAY 13 new update for any browser extension 
+console.log("🔒 PreSendAI content script loaded – Day 13 (with background worker)");
+
+// Configuration
+const BACKEND_URL = "http://localhost:5000/scan"; // Change in production
+const DEBOUNCE_DELAY = 600; // ms
+
+// Track fields to avoid duplicate listeners and store last sent text
 const trackedFields = new WeakSet();
+const lastSentText = new WeakMap(); // field -> last text sent to backend
+let isUpdating = false; // flag to ignore input events caused by our own replacement
 
 /**
  * Check if an element is an editable text field.
- * Returns true for <input> (excluding buttons, checkboxes, etc.), <textarea>, and contenteditable elements.
  */
 function isEditableField(element) {
   if (!element || !element.nodeType || element.nodeType !== Node.ELEMENT_NODE) return false;
   const tag = element.tagName.toLowerCase();
-  // Input elements (only text-like types)
   if (tag === 'input') {
     const type = element.type.toLowerCase();
     return ['text', 'search', 'tel', 'url', 'email', 'password', 'number'].includes(type);
   }
-  // Textarea
   if (tag === 'textarea') return true;
-  // Contenteditable (any element with contenteditable="true")
   if (element.isContentEditable) return true;
   return false;
 }
 
 /**
+ * Get the current text content from an editable field.
+ */
+function getFieldText(field) {
+  const tag = field.tagName.toLowerCase();
+  if (tag === 'input' || tag === 'textarea') {
+    return field.value;
+  } else if (field.isContentEditable) {
+    return field.innerText;
+  }
+  return '';
+}
+
+/**
+ * Set the text content of an editable field.
+ */
+function setFieldText(field, newText) {
+  const tag = field.tagName.toLowerCase();
+  if (tag === 'input' || tag === 'textarea') {
+    field.value = newText;
+  } else if (field.isContentEditable) {
+    field.innerText = newText;
+  }
+}
+
+/**
+ * Debounce helper.
+ */
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
+/**
+ * Send text to background worker and update field with masked result.
+ */
+// async function maskAndReplace(field, text) {
+//   if (!text.trim()) return;
+
+//   try {
+//     // Send message to background worker
+//     const response = await chrome.runtime.sendMessage({
+//       action: "maskText",
+//       text: text,
+//       url: BACKEND_URL
+//     });
+
+//     if (!response.success) {
+//       console.error("Background error:", response.error);
+//       return;
+//     }
+
+//     const data = response.data;
+//     if (data.status === 'ok' && data.masked && data.masked !== text) {
+//       isUpdating = true;
+//       setFieldText(field, data.masked);
+//       isUpdating = false;
+//       lastSentText.set(field, data.masked);
+//     } else if (data.status === 'error') {
+//       console.warn('Backend processing error:', data.message);
+//     }
+//   } catch (error) {
+//     console.error('Failed to communicate with background worker:', error);
+//   }
+// }
+
+
+async function maskAndReplace(field, text) {
+  console.log("maskAndReplace called with text:", text);
+  if (!text.trim()) return;
+
+  try {
+    console.log("Sending message to background...");
+    const response = await chrome.runtime.sendMessage({
+      action: "maskText",
+      text: text,
+      url: BACKEND_URL
+    });
+    console.log("Received response from background:", response);
+
+    if (!response.success) {
+      console.error("Background error:", response.error);
+      return;
+    }
+
+    const data = response.data;
+    if (data.status === 'ok' && data.masked && data.masked !== text) {
+      isUpdating = true;
+      setFieldText(field, data.masked);
+      isUpdating = false;
+      lastSentText.set(field, data.masked);
+    } else if (data.status === 'error') {
+      console.warn('Backend processing error:', data.message);
+    }
+  } catch (error) {
+    console.error('Failed to communicate with background worker:', error);
+  }
+}
+
+/**
  * Handle input event on an editable field.
- * Logs the current value for now – later we'll send to backend and mask.
  */
 function onInput(event) {
-  const target = event.target;
-  let content = '';
-  if (target.tagName.toLowerCase() === 'input' || target.tagName.toLowerCase() === 'textarea') {
-    content = target.value;
-  } else if (target.isContentEditable) {
-    content = target.innerText;
+  if (isUpdating) return;
+
+  const field = event.target;
+  const currentText = getFieldText(field);
+  const lastSent = lastSentText.get(field);
+
+  if (currentText === lastSent) return;
+
+  if (!field._debouncedMask) {
+    field._debouncedMask = debounce((field, text) => {
+      maskAndReplace(field, text);
+    }, DEBOUNCE_DELAY);
   }
-  console.log(`✏️ Typing in ${target.tagName}:`, content);
-  // TODO: Later we'll send to backend and replace with masked text
+
+  field._debouncedMask(field, currentText);
 }
 
 /**
@@ -61,25 +424,31 @@ function attachListener(field) {
   if (!trackedFields.has(field)) {
     field.addEventListener('input', onInput);
     trackedFields.add(field);
-    console.log(`👂 Listening to`, field);
+    console.log('👂 Listening to', field);
   }
 }
 
 /**
- * Find all editable fields on the current page and attach listeners.
+ * Scan page for editable fields and attach listeners.
  */
 function scanAndAttach() {
-  // Get all input, textarea, and any element with contenteditable
-  const inputs = document.querySelectorAll('input[type="text"], input[type="search"], input[type="tel"], input[type="url"], input[type="email"], input[type="password"], input[type="number"], textarea, [contenteditable="true"]');
-  inputs.forEach(attachListener);
+  const selectors = [
+    'input[type="text"]',
+    'input[type="search"]',
+    'input[type="tel"]',
+    'input[type="url"]',
+    'input[type="email"]',
+    'input[type="password"]',
+    'input[type="number"]',
+    'textarea',
+    '[contenteditable="true"]'
+  ];
+  document.querySelectorAll(selectors.join(',')).forEach(attachListener);
 }
 
-// Run initial scan when DOM is ready
+// Initial scan
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', scanAndAttach);
 } else {
   scanAndAttach();
 }
-
-// Optional: Also handle dynamically added fields via MutationObserver (will be added in Day 16)
-// For now, just initial scan.

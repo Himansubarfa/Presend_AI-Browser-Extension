@@ -185,6 +185,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def create_app(config_class=Config):
+    
     app = Flask(__name__)
     app.config.from_object(config_class)
 
@@ -264,5 +265,8 @@ def create_app(config_class=Config):
             "entities": result["entities"],
             "status": "ok"
         }), 200
-
+    print("Registered routes:")
+    for rule in app.url_map.iter_rules():
+     print(f"  {rule.endpoint}: {rule}")
+    
     return app
