@@ -456,7 +456,185 @@
 
 // Day 14 updated content.js
 
-console.log("🔒 PreSendAI content script loaded – Day 14");
+// console.log("🔒 PreSendAI content script loaded – Day 14");
+
+// // Configuration
+// const BACKEND_URL = "http://localhost:5000/scan"; // Change in production
+// const DEBOUNCE_DELAY = 600; // ms
+
+// // Track fields to avoid duplicate listeners and store last sent text
+// const trackedFields = new WeakSet();
+// const lastSentText = new WeakMap(); // field -> last text sent to backend
+// let isUpdating = false; // flag to ignore input events caused by our own replacement
+
+// // ---- Day 14: Placeholders to detect already masked text ----
+// const MASK_PLACEHOLDERS = ["[NAME]", "[EMAIL]", "[PHONE]", "[ID]", "[CARD]", "[REDACTED]"];
+
+// function isAlreadyMasked(text) {
+//   return MASK_PLACEHOLDERS.some(placeholder => text.includes(placeholder));
+// }
+// // -------------------------------------------------------------
+
+// /**
+//  * Check if an element is an editable text field.
+//  */
+// function isEditableField(element) {
+//   if (!element || !element.nodeType || element.nodeType !== Node.ELEMENT_NODE) return false;
+//   const tag = element.tagName.toLowerCase();
+//   if (tag === 'input') {
+//     const type = element.type.toLowerCase();
+//     return ['text', 'search', 'tel', 'url', 'email', 'password', 'number'].includes(type);
+//   }
+//   if (tag === 'textarea') return true;
+//   if (element.isContentEditable) return true;
+//   return false;
+// }
+
+// /**
+//  * Get the current text content from an editable field.
+//  */
+// function getFieldText(field) {
+//   const tag = field.tagName.toLowerCase();
+//   if (tag === 'input' || tag === 'textarea') {
+//     return field.value;
+//   } else if (field.isContentEditable) {
+//     return field.innerText;
+//   }
+//   return '';
+// }
+
+// /**
+//  * Set the text content of an editable field.
+//  */
+// function setFieldText(field, newText) {
+//   const tag = field.tagName.toLowerCase();
+//   if (tag === 'input' || tag === 'textarea') {
+//     field.value = newText;
+//   } else if (field.isContentEditable) {
+//     field.innerText = newText;
+//   }
+// }
+
+// /**
+//  * Debounce helper.
+//  */
+// function debounce(func, wait) {
+//   let timeout;
+//   return function executedFunction(...args) {
+//     const later = () => {
+//       clearTimeout(timeout);
+//       func(...args);
+//     };
+//     clearTimeout(timeout);
+//     timeout = setTimeout(later, wait);
+//   };
+// }
+
+// /**
+//  * Send text to background worker and update field with masked result.
+//  * (Day 14: skip if already masked)
+//  */
+// async function maskAndReplace(field, text) {
+//   console.log("maskAndReplace called with text:", text);
+//   if (!text.trim()) return;
+
+//   // ---- Day 14: Skip if text already contains a placeholder ----
+//   if (isAlreadyMasked(text)) {
+//     console.log("Text already masked, skipping.");
+//     return;
+//   }
+//   // -------------------------------------------------------------
+
+//   try {
+//     console.log("Sending message to background...");
+//     const response = await chrome.runtime.sendMessage({
+//       action: "maskText",
+//       text: text,
+//       url: BACKEND_URL
+//     });
+//     console.log("Received response from background:", response);
+
+//     if (!response.success) {
+//       console.error("Background error:", response.error);
+//       return;
+//     }
+
+//     const data = response.data;
+//     if (data.status === 'ok' && data.masked && data.masked !== text) {
+//       isUpdating = true;
+//       setFieldText(field, data.masked);
+//       isUpdating = false;
+//       lastSentText.set(field, data.masked);
+//     } else if (data.status === 'error') {
+//       console.warn('Backend processing error:', data.message);
+//     }
+//   } catch (error) {
+//     console.error('Failed to communicate with background worker:', error);
+//   }
+// }
+
+// /**
+//  * Handle input event on an editable field.
+//  */
+// function onInput(event) {
+//   if (isUpdating) return;
+
+//   const field = event.target;
+//   const currentText = getFieldText(field);
+//   const lastSent = lastSentText.get(field);
+
+//   if (currentText === lastSent) return;
+
+//   if (!field._debouncedMask) {
+//     field._debouncedMask = debounce((field, text) => {
+//       maskAndReplace(field, text);
+//     }, DEBOUNCE_DELAY);
+//   }
+
+//   field._debouncedMask(field, currentText);
+// }
+
+// /**
+//  * Attach input listener to an editable field if not already tracked.
+//  */
+// function attachListener(field) {
+//   if (!trackedFields.has(field)) {
+//     field.addEventListener('input', onInput);
+//     trackedFields.add(field);
+//     console.log('👂 Listening to', field);
+//   }
+// }
+
+// /**
+//  * Scan page for editable fields and attach listeners.
+//  */
+// function scanAndAttach() {
+//   const selectors = [
+//     'input[type="text"]',
+//     'input[type="search"]',
+//     'input[type="tel"]',
+//     'input[type="url"]',
+//     'input[type="email"]',
+//     'input[type="password"]',
+//     'input[type="number"]',
+//     'textarea',
+//     '[contenteditable="true"]'
+//   ];
+//   document.querySelectorAll(selectors.join(',')).forEach(attachListener);
+// }
+
+// // Initial scan
+// if (document.readyState === 'loading') {
+//   document.addEventListener('DOMContentLoaded', scanAndAttach);
+// } else {
+//   scanAndAttach();
+// }
+
+
+
+
+// DAY 15 update 
+console.log("🔒 PreSendAI content script loaded – Day 15 (cursor preservation)");
 
 // Configuration
 const BACKEND_URL = "http://localhost:5000/scan"; // Change in production
@@ -532,7 +710,7 @@ function debounce(func, wait) {
 
 /**
  * Send text to background worker and update field with masked result.
- * (Day 14: skip if already masked)
+ * Day 15: cursor preservation for input/textarea.
  */
 async function maskAndReplace(field, text) {
   console.log("maskAndReplace called with text:", text);
@@ -544,6 +722,16 @@ async function maskAndReplace(field, text) {
     return;
   }
   // -------------------------------------------------------------
+
+  // ---- Day 15: Save cursor position (only for input/textarea) ----
+  let startPos = null, endPos = null;
+  const isInputOrTextarea = field.tagName.toLowerCase() === 'input' || field.tagName.toLowerCase() === 'textarea';
+  if (isInputOrTextarea) {
+    startPos = field.selectionStart;
+    endPos = field.selectionEnd;
+    console.log(`Cursor saved: start=${startPos}, end=${endPos}`);
+  }
+  // -----------------------------------------------------------------
 
   try {
     console.log("Sending message to background...");
@@ -563,6 +751,18 @@ async function maskAndReplace(field, text) {
     if (data.status === 'ok' && data.masked && data.masked !== text) {
       isUpdating = true;
       setFieldText(field, data.masked);
+
+      // ---- Day 15: Restore cursor position (input/textarea) ----
+      if (isInputOrTextarea && startPos !== null && endPos !== null) {
+        // New text length might differ; clamp positions to new length
+        const newLength = data.masked.length;
+        const newStart = Math.min(startPos, newLength);
+        const newEnd = Math.min(endPos, newLength);
+        field.setSelectionRange(newStart, newEnd);
+        console.log(`Cursor restored to start=${newStart}, end=${newEnd}`);
+      }
+      // ---------------------------------------------------------
+
       isUpdating = false;
       lastSentText.set(field, data.masked);
     } else if (data.status === 'error') {
