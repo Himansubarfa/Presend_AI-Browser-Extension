@@ -2157,23 +2157,331 @@
 
 
 // content.js – Final cross‑browser version
-console.log("🔒 PreSendAI content script loaded – Final Version");
+// console.log("🔒 PreSendAI content script loaded – Final Version");
+
+// // ==================== CONFIGURATION ====================
+// const BACKEND_URL = "http://localhost:5000/scan";      // Change in production
+// const DEBOUNCE_DELAY = 1000;                           // 1 second delay after typing stops
+// const OBSERVER_DEBOUNCE = 300;                         // ms for MutationObserver
+
+// // All placeholders used by the backend
+// const MASK_PLACEHOLDERS = ["[NAME]", "[EMAIL]", "[PHONE]", "[ID]", "[AADHAAR]", "[CARD]", "[ADDRESS]", "[ORG]", "[REDACTED]"];
+
+// // ==================== CROSS‑BROWSER RUNTIME DETECTION ====================
+// const runtime = (typeof chrome !== 'undefined' && chrome.runtime) ? chrome.runtime :
+//                 (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : null;
+
+// if (!runtime) {
+//     console.warn("No extension runtime API found. Direct fetch will be used (may be blocked by CORS/Shields).");
+// }
+
+// // ==================== STATE TRACKING ====================
+// const trackedFields = new WeakSet();
+// const lastSentText = new WeakMap();
+// const isProcessing = new WeakMap();
+// let isUpdating = false;
+
+// // ==================== HELPER FUNCTIONS ====================
+// function isAlreadyMasked(text) {
+//     return MASK_PLACEHOLDERS.some(placeholder => text.includes(placeholder));
+// }
+
+// function isEditableField(element) {
+//     if (!element || !element.nodeType || element.nodeType !== Node.ELEMENT_NODE) return false;
+//     const tag = element.tagName.toLowerCase();
+//     if (tag === 'input') {
+//         const type = element.type.toLowerCase();
+//         return ['text', 'search', 'tel', 'url', 'email', 'password', 'number'].includes(type);
+//     }
+//     if (tag === 'textarea') return true;
+//     if (element.isContentEditable) return true;
+//     return false;
+// }
+
+// function getFieldText(field) {
+//     const tag = field.tagName.toLowerCase();
+//     if (tag === 'input' || tag === 'textarea') {
+//         return field.value;
+//     } else if (field.isContentEditable) {
+//         return field.innerText;
+//     }
+//     return '';
+// }
+
+// function setFieldText(field, newText) {
+//     const tag = field.tagName.toLowerCase();
+//     if (tag === 'input' || tag === 'textarea') {
+//         field.value = newText;
+//     } else if (field.isContentEditable) {
+//         field.innerText = newText;
+//     }
+// }
+
+// function debounce(func, wait) {
+//     let timeout;
+//     return function executedFunction(...args) {
+//         const later = () => {
+//             clearTimeout(timeout);
+//             func(...args);
+//         };
+//         clearTimeout(timeout);
+//         timeout = setTimeout(later, wait);
+//     };
+// }
+
+// // ==================== CURSOR PRESERVATION ====================
+// function saveCursorPosition(field) {
+//     const tag = field.tagName.toLowerCase();
+//     if (tag === 'input' || tag === 'textarea') {
+//         return {
+//             type: 'input',
+//             start: field.selectionStart,
+//             end: field.selectionEnd
+//         };
+//     }
+//     if (field.isContentEditable) {
+//         const sel = window.getSelection();
+//         if (sel.rangeCount === 0) return null;
+//         const range = sel.getRangeAt(0);
+//         if (field.contains(range.startContainer)) {
+//             const preCaretRange = range.cloneRange();
+//             preCaretRange.selectNodeContents(field);
+//             preCaretRange.setEnd(range.startContainer, range.startOffset);
+//             const startOffset = preCaretRange.toString().length;
+//             return {
+//                 type: 'contenteditable',
+//                 offset: startOffset
+//             };
+//         }
+//     }
+//     return null;
+// }
+
+// function restoreCursorPosition(field, saved, newText) {
+//     if (!saved) return;
+//     const tag = field.tagName.toLowerCase();
+//     if (saved.type === 'input' && (tag === 'input' || tag === 'textarea')) {
+//         const newLength = newText.length;
+//         const newStart = Math.min(saved.start, newLength);
+//         const newEnd = Math.min(saved.end, newLength);
+//         field.setSelectionRange(newStart, newEnd);
+//     } else if (saved.type === 'contenteditable' && field.isContentEditable) {
+//         const newOffset = Math.min(saved.offset, newText.length);
+//         const textNode = field.firstChild;
+//         if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+//             const range = document.createRange();
+//             range.setStart(textNode, newOffset);
+//             range.collapse(true);
+//             const sel = window.getSelection();
+//             sel.removeAllRanges();
+//             sel.addRange(range);
+//         }
+//     }
+// }
+
+// // ==================== BACKEND COMMUNICATION ====================
+// async function sendToBackend(text) {
+//     // Try using extension runtime API first (most reliable, bypasses CORS)
+//     if (runtime) {
+//         try {
+//             const response = await new Promise((resolve, reject) => {
+//                 runtime.sendMessage({ action: "maskText", text: text, url: BACKEND_URL }, (response) => {
+//                     // In Chrome, runtime.lastError is set if there's an error
+//                     if (chrome.runtime.lastError) {
+//                         reject(new Error(chrome.runtime.lastError.message));
+//                     } else {
+//                         resolve(response);
+//                     }
+//                 });
+//             });
+//             return { success: true, data: response.data };
+//         } catch (error) {
+//             console.warn("Runtime messaging failed, falling back to direct fetch:", error);
+//             // fall through to direct fetch
+//         }
+//     } else {
+//         console.warn("No runtime API available, using direct fetch (may be blocked)");
+//     }
+
+//     // Fallback: direct fetch (may be blocked by CORS/Shields, but we try)
+//     try {
+//         const response = await fetch(BACKEND_URL, {
+//             method: 'POST',
+//             headers: { 'Content-Type': 'application/json' },
+//             body: JSON.stringify({ text })
+//         });
+//         if (!response.ok) {
+//             const errorText = await response.text();
+//             throw new Error(`HTTP ${response.status}: ${errorText}`);
+//         }
+//         const data = await response.json();
+//         return { success: true, data };
+//     } catch (error) {
+//         console.error("Direct fetch failed:", error);
+//         return { success: false, error: error.message };
+//     }
+// }
+
+// // ==================== CORE MASKING FUNCTION ====================
+// async function maskAndReplace(field, text) {
+//     console.log("maskAndReplace called with text:", text);
+
+//     if (!text.trim()) return;
+//     if (isAlreadyMasked(text)) {
+//         console.log("Text already masked, skipping.");
+//         return;
+//     }
+//     if (isProcessing.get(field)) {
+//         console.log("Already processing this field, skipping duplicate.");
+//         return;
+//     }
+
+//     const cursorSaved = saveCursorPosition(field);
+//     console.log("Cursor saved:", cursorSaved);
+
+//     isProcessing.set(field, true);
+
+//     try {
+//         const result = await sendToBackend(text);
+//         console.log("Backend result:", result);
+
+//         if (!result.success) {
+//             console.error("Backend error:", result.error);
+//             return;
+//         }
+
+//         const data = result.data;
+
+//         if (data.status === 'ok' && data.masked && data.masked !== text) {
+//             console.log("Replacing field text with:", data.masked);
+//             isUpdating = true;
+//             setFieldText(field, data.masked);
+
+//             restoreCursorPosition(field, cursorSaved, data.masked);
+
+//             isUpdating = false;
+//             lastSentText.set(field, data.masked);
+//         } else if (data.status === 'error') {
+//             console.warn('Backend processing error:', data.message);
+//         } else {
+//             console.log("No change needed (masked text unchanged or empty)");
+//             lastSentText.set(field, data.masked || text);
+//         }
+//     } catch (error) {
+//         console.error('Failed to communicate:', error);
+//     } finally {
+//         isProcessing.set(field, false);
+//     }
+// }
+
+// // ==================== INPUT HANDLER ====================
+// function onInput(event) {
+//     if (isUpdating) return;
+
+//     const field = event.target;
+//     const currentText = getFieldText(field);
+//     const lastSent = lastSentText.get(field);
+
+//     if (currentText === lastSent) return;
+
+//     if (!field._debouncedMask) {
+//         field._debouncedMask = debounce((field, text) => {
+//             maskAndReplace(field, text);
+//         }, DEBOUNCE_DELAY);
+//     }
+
+//     field._debouncedMask(field, currentText);
+// }
+
+// // ==================== ATTACH LISTENERS ====================
+// function attachListener(field) {
+//     if (!trackedFields.has(field)) {
+//         field.addEventListener('input', onInput);
+//         trackedFields.add(field);
+//         console.log('👂 Listening to', field);
+//     }
+// }
+
+// function scanAndAttach() {
+//     const selectors = [
+//         'input[type="text"]',
+//         'input[type="search"]',
+//         'input[type="tel"]',
+//         'input[type="url"]',
+//         'input[type="email"]',
+//         'input[type="password"]',
+//         'input[type="number"]',
+//         'textarea',
+//         '[contenteditable="true"]'
+//     ];
+//     document.querySelectorAll(selectors.join(',')).forEach(attachListener);
+// }
+
+// // ==================== MUTATION OBSERVER ====================
+// let observerTimeout = null;
+// function handleMutations(mutations) {
+//     if (observerTimeout) clearTimeout(observerTimeout);
+//     observerTimeout = setTimeout(() => {
+//         console.log("🔍 Scanning for dynamically added fields...");
+//         scanAndAttach();
+//     }, OBSERVER_DEBOUNCE);
+// }
+
+// function observeDynamicFields() {
+//     const observer = new MutationObserver(handleMutations);
+//     observer.observe(document.body, {
+//         childList: true,
+//         subtree: true
+//     });
+//     console.log("👁️ MutationObserver active – watching for new fields");
+// }
+
+// // ==================== INITIALISATION ====================
+// if (document.readyState === 'loading') {
+//     document.addEventListener('DOMContentLoaded', () => {
+//         scanAndAttach();
+//         observeDynamicFields();
+//     });
+// } else {
+//     scanAndAttach();
+//     observeDynamicFields();
+// }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// content.js – Diagnostic version
+console.log("🔒 PreSendAI content script loaded – Diagnostic Version");
 
 // ==================== CONFIGURATION ====================
-const BACKEND_URL = "http://localhost:5000/scan";      // Change in production
-const DEBOUNCE_DELAY = 1000;                           // 1 second delay after typing stops
-const OBSERVER_DEBOUNCE = 300;                         // ms for MutationObserver
-
-// All placeholders used by the backend
+const BACKEND_URL = "http://localhost:5000/scan";
+const DEBOUNCE_DELAY = 1000;
+const OBSERVER_DEBOUNCE = 300;
 const MASK_PLACEHOLDERS = ["[NAME]", "[EMAIL]", "[PHONE]", "[ID]", "[AADHAAR]", "[CARD]", "[ADDRESS]", "[ORG]", "[REDACTED]"];
 
 // ==================== CROSS‑BROWSER RUNTIME DETECTION ====================
 const runtime = (typeof chrome !== 'undefined' && chrome.runtime) ? chrome.runtime :
                 (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : null;
-
-if (!runtime) {
-    console.warn("No extension runtime API found. Direct fetch will be used (may be blocked by CORS/Shields).");
-}
+if (!runtime) console.warn("No extension runtime API found.");
 
 // ==================== STATE TRACKING ====================
 const trackedFields = new WeakSet();
@@ -2181,9 +2489,8 @@ const lastSentText = new WeakMap();
 const isProcessing = new WeakMap();
 let isUpdating = false;
 
-// ==================== HELPER FUNCTIONS ====================
 function isAlreadyMasked(text) {
-    return MASK_PLACEHOLDERS.some(placeholder => text.includes(placeholder));
+    return MASK_PLACEHOLDERS.some(p => text.includes(p));
 }
 
 function isEditableField(element) {
@@ -2200,44 +2507,29 @@ function isEditableField(element) {
 
 function getFieldText(field) {
     const tag = field.tagName.toLowerCase();
-    if (tag === 'input' || tag === 'textarea') {
-        return field.value;
-    } else if (field.isContentEditable) {
-        return field.innerText;
-    }
+    if (tag === 'input' || tag === 'textarea') return field.value;
+    if (field.isContentEditable) return field.innerText;
     return '';
 }
 
 function setFieldText(field, newText) {
     const tag = field.tagName.toLowerCase();
-    if (tag === 'input' || tag === 'textarea') {
-        field.value = newText;
-    } else if (field.isContentEditable) {
-        field.innerText = newText;
-    }
+    if (tag === 'input' || tag === 'textarea') field.value = newText;
+    else if (field.isContentEditable) field.innerText = newText;
 }
 
 function debounce(func, wait) {
     let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
+    return function(...args) {
         clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
+        timeout = setTimeout(() => func(...args), wait);
     };
 }
 
-// ==================== CURSOR PRESERVATION ====================
 function saveCursorPosition(field) {
     const tag = field.tagName.toLowerCase();
     if (tag === 'input' || tag === 'textarea') {
-        return {
-            type: 'input',
-            start: field.selectionStart,
-            end: field.selectionEnd
-        };
+        return { type: 'input', start: field.selectionStart, end: field.selectionEnd };
     }
     if (field.isContentEditable) {
         const sel = window.getSelection();
@@ -2247,11 +2539,7 @@ function saveCursorPosition(field) {
             const preCaretRange = range.cloneRange();
             preCaretRange.selectNodeContents(field);
             preCaretRange.setEnd(range.startContainer, range.startOffset);
-            const startOffset = preCaretRange.toString().length;
-            return {
-                type: 'contenteditable',
-                offset: startOffset
-            };
+            return { type: 'contenteditable', offset: preCaretRange.toString().length };
         }
     }
     return null;
@@ -2262,9 +2550,7 @@ function restoreCursorPosition(field, saved, newText) {
     const tag = field.tagName.toLowerCase();
     if (saved.type === 'input' && (tag === 'input' || tag === 'textarea')) {
         const newLength = newText.length;
-        const newStart = Math.min(saved.start, newLength);
-        const newEnd = Math.min(saved.end, newLength);
-        field.setSelectionRange(newStart, newEnd);
+        field.setSelectionRange(Math.min(saved.start, newLength), Math.min(saved.end, newLength));
     } else if (saved.type === 'contenteditable' && field.isContentEditable) {
         const newOffset = Math.min(saved.offset, newText.length);
         const textNode = field.firstChild;
@@ -2272,128 +2558,91 @@ function restoreCursorPosition(field, saved, newText) {
             const range = document.createRange();
             range.setStart(textNode, newOffset);
             range.collapse(true);
-            const sel = window.getSelection();
-            sel.removeAllRanges();
-            sel.addRange(range);
+            window.getSelection().removeAllRanges();
+            window.getSelection().addRange(range);
         }
     }
 }
 
-// ==================== BACKEND COMMUNICATION ====================
 async function sendToBackend(text) {
-    // Try using extension runtime API first (most reliable, bypasses CORS)
     if (runtime) {
         try {
             const response = await new Promise((resolve, reject) => {
-                runtime.sendMessage({ action: "maskText", text: text, url: BACKEND_URL }, (response) => {
-                    // In Chrome, runtime.lastError is set if there's an error
-                    if (chrome.runtime.lastError) {
-                        reject(new Error(chrome.runtime.lastError.message));
-                    } else {
-                        resolve(response);
-                    }
+                runtime.sendMessage({ action: "maskText", text, url: BACKEND_URL }, (response) => {
+                    if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+                    else resolve(response);
                 });
             });
             return { success: true, data: response.data };
-        } catch (error) {
-            console.warn("Runtime messaging failed, falling back to direct fetch:", error);
-            // fall through to direct fetch
+        } catch (e) {
+            console.warn("Runtime messaging failed, falling back to fetch:", e);
         }
-    } else {
-        console.warn("No runtime API available, using direct fetch (may be blocked)");
     }
-
-    // Fallback: direct fetch (may be blocked by CORS/Shields, but we try)
     try {
-        const response = await fetch(BACKEND_URL, {
+        const res = await fetch(BACKEND_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text })
         });
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`HTTP ${response.status}: ${errorText}`);
-        }
-        const data = await response.json();
-        return { success: true, data };
-    } catch (error) {
-        console.error("Direct fetch failed:", error);
-        return { success: false, error: error.message };
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return { success: true, data: await res.json() };
+    } catch (e) {
+        return { success: false, error: e.message };
     }
 }
 
-// ==================== CORE MASKING FUNCTION ====================
 async function maskAndReplace(field, text) {
     console.log("maskAndReplace called with text:", text);
-
     if (!text.trim()) return;
-    if (isAlreadyMasked(text)) {
-        console.log("Text already masked, skipping.");
-        return;
-    }
-    if (isProcessing.get(field)) {
-        console.log("Already processing this field, skipping duplicate.");
-        return;
-    }
+    if (isAlreadyMasked(text)) { console.log("Text already masked, skipping."); return; }
+    if (isProcessing.get(field)) { console.log("Already processing, skipping."); return; }
 
     const cursorSaved = saveCursorPosition(field);
     console.log("Cursor saved:", cursorSaved);
-
     isProcessing.set(field, true);
 
     try {
         const result = await sendToBackend(text);
         console.log("Backend result:", result);
-
-        if (!result.success) {
-            console.error("Backend error:", result.error);
-            return;
-        }
+        if (!result.success) { console.error("Backend error:", result.error); return; }
 
         const data = result.data;
-
         if (data.status === 'ok' && data.masked && data.masked !== text) {
-            console.log("Replacing field text with:", data.masked);
+            console.log("Replacing with:", data.masked);
             isUpdating = true;
             setFieldText(field, data.masked);
-
             restoreCursorPosition(field, cursorSaved, data.masked);
-
             isUpdating = false;
             lastSentText.set(field, data.masked);
-        } else if (data.status === 'error') {
-            console.warn('Backend processing error:', data.message);
         } else {
-            console.log("No change needed (masked text unchanged or empty)");
+            console.log("No change needed");
             lastSentText.set(field, data.masked || text);
         }
-    } catch (error) {
-        console.error('Failed to communicate:', error);
+    } catch (e) {
+        console.error("Error:", e);
     } finally {
         isProcessing.set(field, false);
     }
 }
 
-// ==================== INPUT HANDLER ====================
 function onInput(event) {
-    if (isUpdating) return;
+    console.log("🟢 onInput triggered on", event.target.tagName, event.target);
+    if (isUpdating) { console.log("isUpdating true, ignoring"); return; }
 
     const field = event.target;
     const currentText = getFieldText(field);
     const lastSent = lastSentText.get(field);
+    console.log("Current text:", currentText, "Last sent:", lastSent);
 
-    if (currentText === lastSent) return;
+    if (currentText === lastSent) { console.log("Text unchanged, ignoring"); return; }
 
     if (!field._debouncedMask) {
-        field._debouncedMask = debounce((field, text) => {
-            maskAndReplace(field, text);
-        }, DEBOUNCE_DELAY);
+        field._debouncedMask = debounce((f, t) => maskAndReplace(f, t), DEBOUNCE_DELAY);
+        console.log("Created debouncer for field");
     }
-
     field._debouncedMask(field, currentText);
 }
 
-// ==================== ATTACH LISTENERS ====================
 function attachListener(field) {
     if (!trackedFields.has(field)) {
         field.addEventListener('input', onInput);
@@ -2404,23 +2653,16 @@ function attachListener(field) {
 
 function scanAndAttach() {
     const selectors = [
-        'input[type="text"]',
-        'input[type="search"]',
-        'input[type="tel"]',
-        'input[type="url"]',
-        'input[type="email"]',
-        'input[type="password"]',
-        'input[type="number"]',
-        'textarea',
-        '[contenteditable="true"]'
+        'input[type="text"]', 'input[type="search"]', 'input[type="tel"]',
+        'input[type="url"]', 'input[type="email"]', 'input[type="password"]',
+        'input[type="number"]', 'textarea', '[contenteditable="true"]'
     ];
     document.querySelectorAll(selectors.join(',')).forEach(attachListener);
 }
 
-// ==================== MUTATION OBSERVER ====================
-let observerTimeout = null;
-function handleMutations(mutations) {
-    if (observerTimeout) clearTimeout(observerTimeout);
+let observerTimeout;
+function handleMutations() {
+    clearTimeout(observerTimeout);
     observerTimeout = setTimeout(() => {
         console.log("🔍 Scanning for dynamically added fields...");
         scanAndAttach();
@@ -2428,20 +2670,12 @@ function handleMutations(mutations) {
 }
 
 function observeDynamicFields() {
-    const observer = new MutationObserver(handleMutations);
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
-    console.log("👁️ MutationObserver active – watching for new fields");
+    new MutationObserver(handleMutations).observe(document.body, { childList: true, subtree: true });
+    console.log("👁️ MutationObserver active");
 }
 
-// ==================== INITIALISATION ====================
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        scanAndAttach();
-        observeDynamicFields();
-    });
+    document.addEventListener('DOMContentLoaded', () => { scanAndAttach(); observeDynamicFields(); });
 } else {
     scanAndAttach();
     observeDynamicFields();
