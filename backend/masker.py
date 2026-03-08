@@ -650,7 +650,8 @@ MASK_LABELS = {
     "EMAIL": "[EMAIL]",
     "PHONE": "[PHONE]",
     "ID": "[ID]",
-    "CARD": "[CARD]"
+    "CARD": "[CARD]",
+    "ADDRESS": "[ADDRESS]"
 }
 
 
