@@ -2032,26 +2032,26 @@ Combines spaCy NER (PERSON) and regex patterns (EMAIL, PHONE, ID, CARD).
 Returns spans relative to the original input text (no modification).
 """
 
-import re
-import logging
-from typing import List, Dict, Any
+# import re
+# import logging
+# from typing import List, Dict, Any
 
-import spacy
-from .config import MAX_TEXT_LENGTH
+# import spacy
+# from .config import MAX_TEXT_LENGTH
 
-logger = logging.getLogger(__name__)
+# logger = logging.getLogger(__name__)
 
-# --- Globals ---
-_nlp = None
+# # --- Globals ---
+# _nlp = None
 
-# Priority for overlap resolution (higher value = higher priority)
-PRIORITY_MAP = {
-    "EMAIL": 5,
-    "PHONE": 4,
-    "ID": 3,
-    "CARD": 2,
-    "PERSON": 1
-}
+# # Priority for overlap resolution (higher value = higher priority)
+# PRIORITY_MAP = {
+#     "EMAIL": 5,
+#     "PHONE": 4,
+#     "ID": 3,
+#     "CARD": 2,
+#     "PERSON": 1
+# }
 
 
 # def _get_spacy_model():
@@ -2075,21 +2075,21 @@ PRIORITY_MAP = {
 #     return _nlp
 
 
-def _get_spacy_model():
-    """Lazy-load the spaCy model with only NER enabled (and its dependencies)."""
-    global _nlp
-    if _nlp is None:
-        logger.info("Loading spaCy model 'en_core_web_sm' (NER only)")
-        try:
-            # Disable all components except those required for NER (tok2vec, ner)
-            _nlp = spacy.load(
-                "en_core_web_sm",
-                disable=["tagger", "parser", "attribute_ruler", "lemmatizer"]
-            )
-        except OSError:
-            logger.error("SpaCy model not found. Run: python -m spacy download en_core_web_sm")
-            raise
-    return _nlp
+# def _get_spacy_model():
+#     """Lazy-load the spaCy model with only NER enabled (and its dependencies)."""
+#     global _nlp
+#     if _nlp is None:
+#         logger.info("Loading spaCy model 'en_core_web_sm' (NER only)")
+#         try:
+#             # Disable all components except those required for NER (tok2vec, ner)
+#             _nlp = spacy.load(
+#                 "en_core_web_sm",
+#                 disable=["tagger", "parser", "attribute_ruler", "lemmatizer"]
+#             )
+#         except OSError:
+#             logger.error("SpaCy model not found. Run: python -m spacy download en_core_web_sm")
+#             raise
+    # return _nlp
 
 
 # # --- Regex detectors (private) ---
@@ -2225,6 +2225,564 @@ Includes a fallback heuristic for names (capitalized word sequences) when spaCy 
 Spans are relative to the original input text (no modification).
 """
 
+# import re
+# import logging
+# from typing import List, Dict, Any, Optional
+
+# import spacy
+# from .config import MAX_TEXT_LENGTH
+
+# logger = logging.getLogger(__name__)
+
+# # --- Globals ---
+# _nlp: Optional[spacy.Language] = None
+
+# # Priority for overlap resolution (higher value = higher priority)
+# PRIORITY_MAP = {
+#     "EMAIL": 5,
+#     "PHONE": 4,
+#     "ADDRESS": 3,
+#     "ID": 2,
+#     "CARD": 2,
+#     "PERSON": 1
+# }
+
+
+# def _get_spacy_model() -> spacy.Language:
+#     """Lazy‑load the spaCy model with only NER enabled (and its dependencies)."""
+#     global _nlp
+#     if _nlp is None:
+#         logger.info("Loading spaCy model 'en_core_web_sm' (NER only)")
+#         try:
+#             # Disable components not needed for NER
+#             _nlp = spacy.load(
+#                 "en_core_web_sm",
+#                 disable=["tagger", "parser", "attribute_ruler", "lemmatizer"]
+#             )
+#         except OSError:
+#             logger.error("SpaCy model not found. Run: python -m spacy download en_core_web_sm")
+#             raise
+#     return _nlp
+
+
+# # ----------------------------------------------------------------------
+# # Regex detectors (private)
+# # ----------------------------------------------------------------------
+
+# def _detect_emails(text: str) -> List[Dict[str, Any]]:
+#     """Extract email addresses."""
+#     pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
+#     return [
+#         {"label": "EMAIL", "text": m.group(), "start": m.start(), "end": m.end()}
+#         for m in re.finditer(pattern, text)
+#     ]
+
+
+# def _detect_phones(text: str) -> List[Dict[str, Any]]:
+#     """
+#     Extract phone numbers in various formats.
+#     Simplified robust pattern with fallback.
+#     """
+#     # Primary pattern – handles most common formats
+#     primary_pattern = r'''
+#         (?:\+?\d{1,3}[-.\s]?)?          # optional country code
+#         \(?\d{3}\)?[-.\s]?              # area code (optional parentheses)
+#         \d{3}[-.\s]?                    # prefix
+#         \d{4}                            # line number
+#         (?:\s*(?:#|x\.?|ext\.?)\s*\d+)?  # optional extension
+#     '''
+#     try:
+#         compiled = re.compile(primary_pattern, re.VERBOSE)
+#     except re.error as e:
+#         logger.error(f"Phone regex compilation failed: {e}, using fallback pattern")
+#         # Fallback: just 10 consecutive digits
+#         compiled = re.compile(r'\b\d{10}\b')
+#     return [
+#         {"label": "PHONE", "text": m.group(), "start": m.start(), "end": m.end()}
+#         for m in compiled.finditer(text)
+#     ]
+
+
+# def _detect_ids(text: str) -> List[Dict[str, Any]]:
+#     """
+#     Extract ID‑like numbers (e.g., 1234 5678 9012, 1234-5678-9012).
+#     """
+#     pattern = r'\b\d{4}[- ]?\d{4}[- ]?\d{4}\b'
+#     return [
+#         {"label": "ID", "text": m.group(), "start": m.start(), "end": m.end()}
+#         for m in re.finditer(pattern, text)
+#     ]
+
+
+# def _detect_cards(text: str) -> List[Dict[str, Any]]:
+#     """
+#     Extract credit/debit card numbers (16 digits, optionally grouped).
+#     """
+#     pattern = r'\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b'
+#     return [
+#         {"label": "CARD", "text": m.group(), "start": m.start(), "end": m.end()}
+#         for m in re.finditer(pattern, text)
+#     ]
+
+
+# def _detect_addresses(text: str) -> List[Dict[str, Any]]:
+#     """
+#     Detect US‑style addresses: number + street name, optionally followed by city, state, ZIP.
+#     Examples: 123 Main St, 123 Main St, Springfield, IL 62701
+#     """
+#     pattern = r'''
+#         \b\d{1,5}                         # street number (1-5 digits)
+#         \s+                                # space
+#         [A-Za-z0-9\s\.\-]+                  # street name (allow letters, numbers, spaces, dots, hyphens)
+#         (?:                                 # optional city/state/zip block
+#             (?:,\s+|\s+)                     # separator
+#             [A-Z][a-zA-Z\s]+                  # city (capitalized words)
+#             (?:,\s+|\s+)                       # separator
+#             [A-Z]{2}                           # state (2 uppercase letters)
+#             \s+                                 # space
+#             \d{5}(?:-\d{4})?                    # ZIP (5 or 9 digits)
+#         )?
+#     '''
+#     try:
+#         compiled = re.compile(pattern, re.VERBOSE | re.IGNORECASE)
+#     except re.error as e:
+#         logger.error(f"Address regex compilation failed: {e}")
+#         return []
+
+#     matches = []
+#     for m in compiled.finditer(text):
+#         # Filter out very short matches (e.g., "1 Main St" is ok; we set a minimum length)
+#         if len(m.group()) > 10:
+#             matches.append({
+#                 "label": "ADDRESS",
+#                 "text": m.group(),
+#                 "start": m.start(),
+#                 "end": m.end()
+#             })
+#     return matches
+
+
+# def _detect_names_fallback(text: str) -> List[Dict[str, Any]]:
+#     """
+#     Fallback heuristic: detect sequences of capitalized words as potential PERSON names.
+#     Used only when spaCy finds zero PERSON entities.
+#     """
+#     pattern = r'\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b'
+#     return [
+#         {"label": "PERSON", "text": m.group(), "start": m.start(), "end": m.end()}
+#         for m in re.finditer(pattern, text)
+#     ]
+
+
+# # ----------------------------------------------------------------------
+# # Public detection functions
+# # ----------------------------------------------------------------------
+
+# def detect_spacy_entities(text: str) -> List[Dict[str, Any]]:
+#     """Extract PERSON entities using spaCy NER."""
+#     if not text:
+#         return []
+#     nlp = _get_spacy_model()
+#     detected = []
+#     try:
+#         doc = nlp(text)
+#         for ent in doc.ents:
+#             if ent.label_ == "PERSON":
+#                 detected.append({
+#                     "label": "PERSON",
+#                     "text": ent.text,
+#                     "start": ent.start_char,
+#                     "end": ent.end_char
+#                 })
+#     except Exception as e:
+#         logger.exception("SpaCy processing failed")
+#     return detected
+
+
+# def detect_regex_entities(text: str) -> List[Dict[str, Any]]:
+#     """Run all regex detectors and return combined list."""
+#     if not text:
+#         return []
+#     entities = []
+#     try:
+#         entities.extend(_detect_emails(text))
+#         entities.extend(_detect_phones(text))
+#         entities.extend(_detect_ids(text))
+#         entities.extend(_detect_cards(text))
+#         entities.extend(_detect_addresses(text))
+#     except Exception as e:
+#         logger.exception("Regex detection failed")
+#     return entities
+
+
+# def resolve_overlaps(entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+#     """
+#     Resolve overlapping spans using length and priority.
+#     Keeps the longest span; if equal length, higher priority wins.
+#     Assumes input spans are from the same text (no index shift).
+#     """
+#     if not entities:
+#         return []
+
+#     # Validate each entity
+#     for idx, ent in enumerate(entities):
+#         if not all(k in ent for k in ('label', 'start', 'end')):
+#             raise ValueError(f"Entity {idx} missing required keys: {ent}")
+#         if not isinstance(ent['start'], int) or not isinstance(ent['end'], int):
+#             raise ValueError(f"Entity {idx} start/end must be integers: {ent}")
+#         if ent['start'] < 0 or ent['end'] <= ent['start']:
+#             raise ValueError(f"Entity {idx} has invalid span: {ent}")
+
+#     # Sort: by start ascending, then by end descending (longer first), then by priority descending
+#     sorted_ents = sorted(
+#         entities,
+#         key=lambda e: (e['start'], - (e['end'] - e['start']), -PRIORITY_MAP.get(e['label'], 0))
+#     )
+
+#     resolved = []
+#     current = sorted_ents[0]
+
+#     for next_ent in sorted_ents[1:]:
+#         if next_ent['start'] < current['end']:  # overlap
+#             # Keep the span with greater length; if equal, keep current (already higher priority)
+#             if (next_ent['end'] - next_ent['start']) > (current['end'] - current['start']):
+#                 current = next_ent
+#         else:
+#             resolved.append(current)
+#             current = next_ent
+#     resolved.append(current)
+
+#     logger.debug("Resolved %d entities to %d", len(entities), len(resolved))
+#     return resolved
+
+
+# def detect_entities(raw_text: str) -> List[Dict[str, Any]]:
+#     """
+#     Main entry point: detect all PII entities in raw text.
+#     Returns spans relative to the original input (no text modification).
+
+#     Steps:
+#         1. Input validation and length guard.
+#         2. Detect using spaCy (PERSON).
+#         3. Detect using regex (EMAIL, PHONE, ID, CARD, ADDRESS).
+#         4. If no PERSON found by spaCy, apply fallback name heuristic.
+#         5. Combine all spans and resolve overlaps.
+#     """
+#     # 1. Input validation and length guard
+#     if raw_text is None:
+#         return []
+#     if not isinstance(raw_text, str):
+#         raw_text = str(raw_text)
+
+#     if len(raw_text) > MAX_TEXT_LENGTH:
+#         logger.warning("Text exceeds max length (%d chars), returning empty", MAX_TEXT_LENGTH)
+#         return []
+
+#     # 2. Detect using both methods
+#     spacy_spans = detect_spacy_entities(raw_text)
+#     regex_spans = detect_regex_entities(raw_text)
+
+#     # 3. Fallback: if no PERSON from spaCy, try heuristic name detection
+#     fallback_spans = []
+#     if not any(span['label'] == 'PERSON' for span in spacy_spans):
+#         fallback_spans = _detect_names_fallback(raw_text)
+#         if fallback_spans:
+#             logger.info("Fallback name detection found %d potential names", len(fallback_spans))
+
+#     # 4. Combine and resolve overlaps
+#     combined = spacy_spans + regex_spans + fallback_spans
+#     if not combined:
+#         return []
+
+#     return resolve_overlaps(combined)
+
+
+
+# # DAY 16 final update 
+# """
+# PII entity detection module.
+# Combines spaCy NER (PERSON) and regex patterns (EMAIL, PHONE, ID, CARD, ADDRESS, ORG).
+# Includes fallback for capitalized names (including single words) and all‑caps words as ORG.
+# Spans are relative to the original input text (no modification).
+# """
+
+# import re
+# import logging
+# from typing import List, Dict, Any, Optional
+
+# import spacy
+# from .config import MAX_TEXT_LENGTH
+
+# logger = logging.getLogger(__name__)
+
+# # --- Globals ---
+# _nlp: Optional[spacy.Language] = None
+
+# # Priority for overlap resolution (higher value = higher priority)
+# PRIORITY_MAP = {
+#     "EMAIL": 5,
+#     "PHONE": 4,
+#     "ADDRESS": 3,
+#     "ID": 2,
+#     "CARD": 2,
+#     "ORG": 1,
+#     "PERSON": 1
+# }
+
+
+# def _get_spacy_model() -> spacy.Language:
+#     """Lazy‑load the spaCy model with only NER enabled."""
+#     global _nlp
+#     if _nlp is None:
+#         logger.info("Loading spaCy model 'en_core_web_sm' (NER only)")
+#         try:
+#             _nlp = spacy.load(
+#                 "en_core_web_sm",
+#                 disable=["tagger", "parser", "attribute_ruler", "lemmatizer"]
+#             )
+#         except OSError:
+#             logger.error("SpaCy model not found. Run: python -m spacy download en_core_web_sm")
+#             raise
+#     return _nlp
+
+
+# # ----------------------------------------------------------------------
+# # Regex detectors (private)
+# # ----------------------------------------------------------------------
+
+# def _detect_emails(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
+#     return [
+#         {"label": "EMAIL", "text": m.group(), "start": m.start(), "end": m.end()}
+#         for m in re.finditer(pattern, text)
+#     ]
+
+
+# def _detect_phones(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'''
+#         (?:\+?\d{1,3}[-.\s]?)?          # optional country code
+#         \(?\d{3}\)?[-.\s]?              # area code (optional parentheses)
+#         \d{3}[-.\s]?                    # prefix
+#         \d{4}                            # line number
+#         (?:\s*(?:#|x\.?|ext\.?)\s*\d+)?  # optional extension
+#     '''
+#     try:
+#         compiled = re.compile(pattern, re.VERBOSE)
+#     except re.error as e:
+#         logger.error(f"Phone regex compilation failed: {e}, using fallback pattern")
+#         compiled = re.compile(r'\b\d{10}\b')
+#     return [
+#         {"label": "PHONE", "text": m.group(), "start": m.start(), "end": m.end()}
+#         for m in compiled.finditer(text)
+#     ]
+
+
+# def _detect_ids(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'\b\d{4}[- ]?\d{4}[- ]?\d{4}\b'
+#     return [
+#         {"label": "ID", "text": m.group(), "start": m.start(), "end": m.end()}
+#         for m in re.finditer(pattern, text)
+#     ]
+
+
+# def _detect_cards(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b'
+#     return [
+#         {"label": "CARD", "text": m.group(), "start": m.start(), "end": m.end()}
+#         for m in re.finditer(pattern, text)
+#     ]
+
+
+# def _detect_addresses(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'''
+#         \b\d{1,5}                         # street number (1-5 digits)
+#         \s+                                # space
+#         [A-Za-z0-9\s\.\-]+                  # street name (allow letters, numbers, spaces, dots, hyphens)
+#         (?:                                 # optional city/state/zip block
+#             (?:,\s+|\s+)                     # separator
+#             [A-Z][a-zA-Z\s]+                  # city (capitalized words)
+#             (?:,\s+|\s+)                       # separator
+#             [A-Z]{2}                           # state (2 uppercase letters)
+#             \s+                                 # space
+#             \d{5}(?:-\d{4})?                    # ZIP (5 or 9 digits)
+#         )?
+#     '''
+#     try:
+#         compiled = re.compile(pattern, re.VERBOSE | re.IGNORECASE)
+#     except re.error as e:
+#         logger.error(f"Address regex compilation failed: {e}")
+#         return []
+#     matches = []
+#     for m in compiled.finditer(text):
+#         if len(m.group()) > 10:
+#             matches.append({
+#                 "label": "ADDRESS",
+#                 "text": m.group(),
+#                 "start": m.start(),
+#                 "end": m.end()
+#             })
+#     return matches
+
+
+# def _detect_organizations(text: str) -> List[Dict[str, Any]]:
+#     """Detect all‑caps words (≥2 letters) as potential organizations."""
+#     pattern = r'\b[A-Z]{2,}\b'
+#     return [
+#         {"label": "ORG", "text": m.group(), "start": m.start(), "end": m.end()}
+#         for m in re.finditer(pattern, text)
+#     ]
+
+
+# def _detect_names_fallback(text: str) -> List[Dict[str, Any]]:
+#     """
+#     Fallback name detection:
+#     - Multi‑word capitalized sequences (e.g., "Rahul Sharma")
+#     - Single capitalized words (≥2 letters) that are not at sentence start? We'll include all.
+#     """
+#     multi_word = r'\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b'
+#     single_word = r'\b[A-Z][a-z]{1,}\b'   # single capitalized word (at least 2 letters)
+#     combined_pattern = f'({multi_word})|({single_word})'
+#     matches = re.finditer(combined_pattern, text)
+#     return [
+#         {"label": "PERSON", "text": m.group(), "start": m.start(), "end": m.end()}
+#         for m in matches
+#     ]
+
+
+# # ----------------------------------------------------------------------
+# # Public detection functions
+# # ----------------------------------------------------------------------
+
+# # def detect_spacy_entities(text: str) -> List[Dict[str, Any]]:
+# #     if not text:
+# #         return []
+# #     nlp = _get_spacy_model()
+# #     detected = []
+# #     try:
+# #         doc = nlp(text)
+# #         for ent in doc.ents:
+# #             if ent.label_ == "PERSON":
+# #                 detected.append({
+# #                     "label": "PERSON",
+# #                     "text": ent.text,
+# #                     "start": ent.start_char,
+# #                     "end": ent.end_char
+# #                 })
+# #     except Exception as e:
+# #         logger.exception("SpaCy processing failed")
+# #     return detected
+# def detect_spacy_entities(text: str) -> List[Dict[str, Any]]:
+#     """Extract PERSON and ORG entities using spaCy NER."""
+#     if not text:
+#         return []
+#     nlp = _get_spacy_model()
+#     detected = []
+#     try:
+#         doc = nlp(text)
+#         for ent in doc.ents:
+#             if ent.label_ == "PERSON":
+#                 detected.append({
+#                     "label": "PERSON",
+#                     "text": ent.text,
+#                     "start": ent.start_char,
+#                     "end": ent.end_char
+#                 })
+#             elif ent.label_ == "ORG":
+#                 detected.append({
+#                     "label": "ORG",
+#                     "text": ent.text,
+#                     "start": ent.start_char,
+#                     "end": ent.end_char
+#                 })
+#     except Exception as e:
+#         logger.exception("SpaCy processing failed")
+#     return detected
+
+
+# def detect_regex_entities(text: str) -> List[Dict[str, Any]]:
+#     if not text:
+#         return []
+#     entities = []
+#     try:
+#         entities.extend(_detect_emails(text))
+#         entities.extend(_detect_phones(text))
+#         entities.extend(_detect_ids(text))
+#         entities.extend(_detect_cards(text))
+#         entities.extend(_detect_addresses(text))
+#         entities.extend(_detect_organizations(text))
+#     except Exception as e:
+#         logger.exception("Regex detection failed")
+#     return entities
+
+
+# def resolve_overlaps(entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+#     if not entities:
+#         return []
+
+#     for idx, ent in enumerate(entities):
+#         if not all(k in ent for k in ('label', 'start', 'end')):
+#             raise ValueError(f"Entity {idx} missing required keys: {ent}")
+#         if not isinstance(ent['start'], int) or not isinstance(ent['end'], int):
+#             raise ValueError(f"Entity {idx} start/end must be integers: {ent}")
+#         if ent['start'] < 0 or ent['end'] <= ent['start']:
+#             raise ValueError(f"Entity {idx} has invalid span: {ent}")
+
+#     sorted_ents = sorted(
+#         entities,
+#         key=lambda e: (e['start'], - (e['end'] - e['start']), -PRIORITY_MAP.get(e['label'], 0))
+#     )
+
+#     resolved = []
+#     current = sorted_ents[0]
+
+#     for next_ent in sorted_ents[1:]:
+#         if next_ent['start'] < current['end']:
+#             if (next_ent['end'] - next_ent['start']) > (current['end'] - current['start']):
+#                 current = next_ent
+#         else:
+#             resolved.append(current)
+#             current = next_ent
+#     resolved.append(current)
+
+#     logger.debug("Resolved %d entities to %d", len(entities), len(resolved))
+#     return resolved
+
+
+# def detect_entities(raw_text: str) -> List[Dict[str, Any]]:
+#     if raw_text is None:
+#         return []
+#     if not isinstance(raw_text, str):
+#         raw_text = str(raw_text)
+
+#     if len(raw_text) > MAX_TEXT_LENGTH:
+#         logger.warning("Text exceeds max length (%d chars), returning empty", MAX_TEXT_LENGTH)
+#         return []
+
+#     spacy_spans = detect_spacy_entities(raw_text)
+#     regex_spans = detect_regex_entities(raw_text)
+
+#     # Fallback: if no PERSON from spaCy, use heuristic name detection
+#     fallback_spans = []
+#     if not any(span['label'] == 'PERSON' for span in spacy_spans):
+#         fallback_spans = _detect_names_fallback(raw_text)
+#         if fallback_spans:
+#             logger.info("Fallback name detection found %d potential names", len(fallback_spans))
+
+#     combined = spacy_spans + regex_spans + fallback_spans
+#     if not combined:
+#         return []
+
+#     return resolve_overlaps(combined)
+
+
+# final update in day 16 
+"""
+PII entity detection module.
+Combines spaCy NER (PERSON, ORG) and regex patterns (EMAIL, PHONE, ID, CARD, ADDRESS, ORG).
+Includes fallback for capitalized names (including single words) and a common‑name list for ORG.
+Spans are relative to the original input text (no modification).
+"""
+
 import re
 import logging
 from typing import List, Dict, Any, Optional
@@ -2237,24 +2795,23 @@ logger = logging.getLogger(__name__)
 # --- Globals ---
 _nlp: Optional[spacy.Language] = None
 
-# Priority for overlap resolution (higher value = higher priority)
+# Priority for overlap resolution
 PRIORITY_MAP = {
     "EMAIL": 5,
     "PHONE": 4,
     "ADDRESS": 3,
     "ID": 2,
     "CARD": 2,
+    "ORG": 1,
     "PERSON": 1
 }
 
-
 def _get_spacy_model() -> spacy.Language:
-    """Lazy‑load the spaCy model with only NER enabled (and its dependencies)."""
+    """Lazy‑load the spaCy model with only NER enabled."""
     global _nlp
     if _nlp is None:
         logger.info("Loading spaCy model 'en_core_web_sm' (NER only)")
         try:
-            # Disable components not needed for NER
             _nlp = spacy.load(
                 "en_core_web_sm",
                 disable=["tagger", "parser", "attribute_ruler", "lemmatizer"]
@@ -2270,21 +2827,14 @@ def _get_spacy_model() -> spacy.Language:
 # ----------------------------------------------------------------------
 
 def _detect_emails(text: str) -> List[Dict[str, Any]]:
-    """Extract email addresses."""
     pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
     return [
         {"label": "EMAIL", "text": m.group(), "start": m.start(), "end": m.end()}
         for m in re.finditer(pattern, text)
     ]
 
-
 def _detect_phones(text: str) -> List[Dict[str, Any]]:
-    """
-    Extract phone numbers in various formats.
-    Simplified robust pattern with fallback.
-    """
-    # Primary pattern – handles most common formats
-    primary_pattern = r'''
+    pattern = r'''
         (?:\+?\d{1,3}[-.\s]?)?          # optional country code
         \(?\d{3}\)?[-.\s]?              # area code (optional parentheses)
         \d{3}[-.\s]?                    # prefix
@@ -2292,55 +2842,41 @@ def _detect_phones(text: str) -> List[Dict[str, Any]]:
         (?:\s*(?:#|x\.?|ext\.?)\s*\d+)?  # optional extension
     '''
     try:
-        compiled = re.compile(primary_pattern, re.VERBOSE)
+        compiled = re.compile(pattern, re.VERBOSE)
     except re.error as e:
         logger.error(f"Phone regex compilation failed: {e}, using fallback pattern")
-        # Fallback: just 10 consecutive digits
         compiled = re.compile(r'\b\d{10}\b')
     return [
         {"label": "PHONE", "text": m.group(), "start": m.start(), "end": m.end()}
         for m in compiled.finditer(text)
     ]
 
-
 def _detect_ids(text: str) -> List[Dict[str, Any]]:
-    """
-    Extract ID‑like numbers (e.g., 1234 5678 9012, 1234-5678-9012).
-    """
     pattern = r'\b\d{4}[- ]?\d{4}[- ]?\d{4}\b'
     return [
         {"label": "ID", "text": m.group(), "start": m.start(), "end": m.end()}
         for m in re.finditer(pattern, text)
     ]
 
-
 def _detect_cards(text: str) -> List[Dict[str, Any]]:
-    """
-    Extract credit/debit card numbers (16 digits, optionally grouped).
-    """
     pattern = r'\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b'
     return [
         {"label": "CARD", "text": m.group(), "start": m.start(), "end": m.end()}
         for m in re.finditer(pattern, text)
     ]
 
-
 def _detect_addresses(text: str) -> List[Dict[str, Any]]:
-    """
-    Detect US‑style addresses: number + street name, optionally followed by city, state, ZIP.
-    Examples: 123 Main St, 123 Main St, Springfield, IL 62701
-    """
     pattern = r'''
         \b\d{1,5}                         # street number (1-5 digits)
         \s+                                # space
-        [A-Za-z0-9\s\.\-]+                  # street name (allow letters, numbers, spaces, dots, hyphens)
+        [A-Za-z0-9\s\.\-]+                  # street name
         (?:                                 # optional city/state/zip block
             (?:,\s+|\s+)                     # separator
-            [A-Z][a-zA-Z\s]+                  # city (capitalized words)
+            [A-Z][a-zA-Z\s]+                  # city
             (?:,\s+|\s+)                       # separator
-            [A-Z]{2}                           # state (2 uppercase letters)
+            [A-Z]{2}                           # state
             \s+                                 # space
-            \d{5}(?:-\d{4})?                    # ZIP (5 or 9 digits)
+            \d{5}(?:-\d{4})?                    # ZIP
         )?
     '''
     try:
@@ -2348,10 +2884,8 @@ def _detect_addresses(text: str) -> List[Dict[str, Any]]:
     except re.error as e:
         logger.error(f"Address regex compilation failed: {e}")
         return []
-
     matches = []
     for m in compiled.finditer(text):
-        # Filter out very short matches (e.g., "1 Main St" is ok; we set a minimum length)
         if len(m.group()) > 10:
             matches.append({
                 "label": "ADDRESS",
@@ -2361,16 +2895,48 @@ def _detect_addresses(text: str) -> List[Dict[str, Any]]:
             })
     return matches
 
+def _detect_allcaps_orgs(text: str) -> List[Dict[str, Any]]:
+    """Detect all‑caps words (≥2 letters) as potential organizations."""
+    pattern = r'\b[A-Z]{2,}\b'
+    return [
+        {"label": "ORG", "text": m.group(), "start": m.start(), "end": m.end()}
+        for m in re.finditer(pattern, text)
+    ]
+
+def _detect_common_orgs(text: str) -> List[Dict[str, Any]]:
+    """
+    Detect common organization names (case‑insensitive) from a predefined list.
+    This catches lowercase, capitalized, and uppercase variants.
+    """
+    # Common company names (add more as needed)
+    common_orgs = {
+        "google", "microsoft", "apple", "amazon", "facebook", "meta",
+        "ibm", "intel", "oracle", "sap", "salesforce", "adobe",
+        "netflix", "spotify", "twitter", "x", "linkedin", "whatsapp",
+        "youtube", "instagram", "tiktok", "snapchat", "reddit", "discord",
+        "slack", "zoom", "teams", "outlook", "gmail", "yahoo", "bing"
+    }
+    # Escape names to avoid regex special characters, then join with |
+    pattern = r'\b(' + '|'.join(re.escape(name) for name in common_orgs) + r')\b'
+    compiled = re.compile(pattern, re.IGNORECASE)
+    return [
+        {"label": "ORG", "text": m.group(), "start": m.start(), "end": m.end()}
+        for m in compiled.finditer(text)
+    ]
 
 def _detect_names_fallback(text: str) -> List[Dict[str, Any]]:
     """
-    Fallback heuristic: detect sequences of capitalized words as potential PERSON names.
-    Used only when spaCy finds zero PERSON entities.
+    Fallback name detection:
+    - Multi‑word capitalized sequences (e.g., "Rahul Sharma")
+    - Single capitalized words (≥2 letters)
     """
-    pattern = r'\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b'
+    multi_word = r'\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b'
+    single_word = r'\b[A-Z][a-z]{1,}\b'
+    combined_pattern = f'({multi_word})|({single_word})'
+    matches = re.finditer(combined_pattern, text)
     return [
         {"label": "PERSON", "text": m.group(), "start": m.start(), "end": m.end()}
-        for m in re.finditer(pattern, text)
+        for m in matches
     ]
 
 
@@ -2379,7 +2945,7 @@ def _detect_names_fallback(text: str) -> List[Dict[str, Any]]:
 # ----------------------------------------------------------------------
 
 def detect_spacy_entities(text: str) -> List[Dict[str, Any]]:
-    """Extract PERSON entities using spaCy NER."""
+    """Extract PERSON and ORG entities using spaCy NER."""
     if not text:
         return []
     nlp = _get_spacy_model()
@@ -2394,13 +2960,18 @@ def detect_spacy_entities(text: str) -> List[Dict[str, Any]]:
                     "start": ent.start_char,
                     "end": ent.end_char
                 })
+            elif ent.label_ == "ORG":
+                detected.append({
+                    "label": "ORG",
+                    "text": ent.text,
+                    "start": ent.start_char,
+                    "end": ent.end_char
+                })
     except Exception as e:
         logger.exception("SpaCy processing failed")
     return detected
 
-
 def detect_regex_entities(text: str) -> List[Dict[str, Any]]:
-    """Run all regex detectors and return combined list."""
     if not text:
         return []
     entities = []
@@ -2410,21 +2981,17 @@ def detect_regex_entities(text: str) -> List[Dict[str, Any]]:
         entities.extend(_detect_ids(text))
         entities.extend(_detect_cards(text))
         entities.extend(_detect_addresses(text))
+        entities.extend(_detect_allcaps_orgs(text))      # for "GOOGLE"
+        entities.extend(_detect_common_orgs(text))       # for "google", "Google"
     except Exception as e:
         logger.exception("Regex detection failed")
     return entities
 
-
 def resolve_overlaps(entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Resolve overlapping spans using length and priority.
-    Keeps the longest span; if equal length, higher priority wins.
-    Assumes input spans are from the same text (no index shift).
-    """
+    # ... (unchanged, same as before) ...
     if not entities:
         return []
 
-    # Validate each entity
     for idx, ent in enumerate(entities):
         if not all(k in ent for k in ('label', 'start', 'end')):
             raise ValueError(f"Entity {idx} missing required keys: {ent}")
@@ -2433,7 +3000,6 @@ def resolve_overlaps(entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if ent['start'] < 0 or ent['end'] <= ent['start']:
             raise ValueError(f"Entity {idx} has invalid span: {ent}")
 
-    # Sort: by start ascending, then by end descending (longer first), then by priority descending
     sorted_ents = sorted(
         entities,
         key=lambda e: (e['start'], - (e['end'] - e['start']), -PRIORITY_MAP.get(e['label'], 0))
@@ -2443,8 +3009,7 @@ def resolve_overlaps(entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     current = sorted_ents[0]
 
     for next_ent in sorted_ents[1:]:
-        if next_ent['start'] < current['end']:  # overlap
-            # Keep the span with greater length; if equal, keep current (already higher priority)
+        if next_ent['start'] < current['end']:
             if (next_ent['end'] - next_ent['start']) > (current['end'] - current['start']):
                 current = next_ent
         else:
@@ -2455,20 +3020,8 @@ def resolve_overlaps(entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     logger.debug("Resolved %d entities to %d", len(entities), len(resolved))
     return resolved
 
-
 def detect_entities(raw_text: str) -> List[Dict[str, Any]]:
-    """
-    Main entry point: detect all PII entities in raw text.
-    Returns spans relative to the original input (no text modification).
-
-    Steps:
-        1. Input validation and length guard.
-        2. Detect using spaCy (PERSON).
-        3. Detect using regex (EMAIL, PHONE, ID, CARD, ADDRESS).
-        4. If no PERSON found by spaCy, apply fallback name heuristic.
-        5. Combine all spans and resolve overlaps.
-    """
-    # 1. Input validation and length guard
+    # ... (unchanged) ...
     if raw_text is None:
         return []
     if not isinstance(raw_text, str):
@@ -2478,18 +3031,16 @@ def detect_entities(raw_text: str) -> List[Dict[str, Any]]:
         logger.warning("Text exceeds max length (%d chars), returning empty", MAX_TEXT_LENGTH)
         return []
 
-    # 2. Detect using both methods
     spacy_spans = detect_spacy_entities(raw_text)
     regex_spans = detect_regex_entities(raw_text)
 
-    # 3. Fallback: if no PERSON from spaCy, try heuristic name detection
+    # Fallback name detection if no PERSON from spaCy
     fallback_spans = []
     if not any(span['label'] == 'PERSON' for span in spacy_spans):
         fallback_spans = _detect_names_fallback(raw_text)
         if fallback_spans:
             logger.info("Fallback name detection found %d potential names", len(fallback_spans))
 
-    # 4. Combine and resolve overlaps
     combined = spacy_spans + regex_spans + fallback_spans
     if not combined:
         return []

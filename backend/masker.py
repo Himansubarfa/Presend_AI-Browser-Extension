@@ -651,7 +651,8 @@ MASK_LABELS = {
     "PHONE": "[PHONE]",
     "ID": "[ID]",
     "CARD": "[CARD]",
-    "ADDRESS": "[ADDRESS]"
+    "ADDRESS": "[ADDRESS]",
+    "ORG": "[ORG]"
 }
 
 
