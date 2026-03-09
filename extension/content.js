@@ -4030,7 +4030,829 @@
 // day 18 code update 
 
 // content.js – Final version with keep‑alive, timeouts, and beautiful highlights
-console.log("🔒 PreSendAI content script loaded – Final Version");
+// console.log("🔒 PreSendAI content script loaded – Final Version");
+
+// // ==================== CONFIGURATION ====================
+// const BACKEND_URL = "http://localhost:5000/scan";
+// const DEBOUNCE_DELAY = 1000;                // 1 second pause after typing
+// const OBSERVER_DEBOUNCE = 300;               // ms for MutationObserver
+// const HIGHLIGHT_DURATION = 800;               // ms – how long highlights stay before replacement
+// const MESSAGE_TIMEOUT = 5000;                  // ms – max wait for background response
+
+// // Placeholders (must match MASK_LABELS in masker.py)
+// const MASK_PLACEHOLDERS = ["[NAME]", "[EMAIL]", "[PHONE]", "[ID]", "[AADHAAR]", "[CARD]", "[ADDRESS]", "[ORG]", "[REDACTED]"];
+
+// // ==================== CROSS‑BROWSER RUNTIME DETECTION ====================
+// const runtime = (typeof chrome !== 'undefined' && chrome.runtime) ? chrome.runtime :
+//                 (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : null;
+// if (!runtime) console.warn("⚠️ No extension runtime API found. Direct fetch will be used (may be blocked by CORS).");
+
+// // ==================== KEEP‑ALIVE ====================
+// if (runtime) {
+//     try {
+//         const port = runtime.connect({ name: "presendai-keepalive" });
+//         port.onMessage.addListener((msg) => {
+//             if (msg.type === "ping") {
+//                 // Just a keep‑alive, no action needed
+//             }
+//         });
+//     } catch (e) {
+//         console.warn("⚠️ Could not establish keep‑alive port:", e);
+//     }
+// }
+
+// // ==================== STATE TRACKING ====================
+// const trackedFields = new WeakSet();
+// const lastSentText = new WeakMap();
+// const isProcessing = new WeakMap();
+// let isUpdating = false;                        // true while we are programmatically updating a field
+
+// // ==================== HELPER FUNCTIONS ====================
+// function isAlreadyMasked(text) {
+//     return MASK_PLACEHOLDERS.some(p => text.includes(p));
+// }
+
+// function isEditableField(element) {
+//     if (!element || !element.nodeType || element.nodeType !== Node.ELEMENT_NODE) return false;
+//     const tag = element.tagName.toLowerCase();
+//     if (tag === 'input') {
+//         const type = element.type.toLowerCase();
+//         return ['text', 'search', 'tel', 'url', 'email', 'password', 'number'].includes(type);
+//     }
+//     if (tag === 'textarea') return true;
+//     if (element.isContentEditable) return true;
+//     return false;
+// }
+
+// function getFieldText(field) {
+//     const tag = field.tagName.toLowerCase();
+//     if (tag === 'input' || tag === 'textarea') return field.value;
+//     if (field.isContentEditable) return field.innerText;
+//     return '';
+// }
+
+// function setFieldText(field, newText) {
+//     const tag = field.tagName.toLowerCase();
+//     if (tag === 'input' || tag === 'textarea') field.value = newText;
+//     else if (field.isContentEditable) field.innerText = newText;
+// }
+
+// function debounce(func, wait) {
+//     let timeout;
+//     return function(...args) {
+//         clearTimeout(timeout);
+//         timeout = setTimeout(() => func(...args), wait);
+//     };
+// }
+
+// // ==================== CURSOR PRESERVATION ====================
+// function saveCursorPosition(field) {
+//     const tag = field.tagName.toLowerCase();
+//     if (tag === 'input' || tag === 'textarea') {
+//         return { type: 'input', start: field.selectionStart, end: field.selectionEnd };
+//     }
+//     if (field.isContentEditable) {
+//         const sel = window.getSelection();
+//         if (sel.rangeCount === 0) return null;
+//         const range = sel.getRangeAt(0);
+//         if (field.contains(range.startContainer)) {
+//             const preCaretRange = range.cloneRange();
+//             preCaretRange.selectNodeContents(field);
+//             preCaretRange.setEnd(range.startContainer, range.startOffset);
+//             return { type: 'contenteditable', offset: preCaretRange.toString().length };
+//         }
+//     }
+//     return null;
+// }
+
+// function restoreCursorPosition(field, saved, newText) {
+//     if (!saved) return;
+//     const tag = field.tagName.toLowerCase();
+//     if (saved.type === 'input' && (tag === 'input' || tag === 'textarea')) {
+//         const newLength = newText.length;
+//         field.setSelectionRange(Math.min(saved.start, newLength), Math.min(saved.end, newLength));
+//     } else if (saved.type === 'contenteditable' && field.isContentEditable) {
+//         const newOffset = Math.min(saved.offset, newText.length);
+//         const textNode = field.firstChild;
+//         if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+//             const range = document.createRange();
+//             range.setStart(textNode, newOffset);
+//             range.collapse(true);
+//             window.getSelection().removeAllRanges();
+//             window.getSelection().addRange(range);
+//         }
+//     }
+// }
+
+// // ==================== HIGHLIGHT ENGINE ====================
+// function injectHighlightStyles() {
+//     const styleId = 'presendai-highlight-styles';
+//     if (document.getElementById(styleId)) return;
+//     const style = document.createElement('style');
+//     style.id = styleId;
+//     style.textContent = `
+//         .presendai-highlight {
+//             background-color: #fff2b0 !important;   /* soft yellow */
+//             color: #000 !important;
+//             border-radius: 4px;
+//             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+//             transition: background-color 0.2s, box-shadow 0.2s;
+//             padding: 0 2px;
+//             margin: 0 -2px;
+//         }
+//         .presendai-flash {
+//             animation: presendai-flash-bg 0.6s ease;
+//         }
+//         @keyframes presendai-flash-bg {
+//             0% { background-color: inherit; }
+//             50% { background-color: #fff2b0; }
+//             100% { background-color: inherit; }
+//         }
+//     `;
+//     document.head.appendChild(style);
+// }
+
+// function removeHighlights(field) {
+//     if (!field.isContentEditable) return;
+//     const highlights = field.querySelectorAll('.presendai-highlight');
+//     highlights.forEach(span => {
+//         const parent = span.parentNode;
+//         parent.replaceChild(document.createTextNode(span.textContent), span);
+//         parent.normalize();
+//     });
+// }
+
+// function highlightContentEditablePlain(field, entities) {
+//     console.log("🎨 Applying per‑word highlight to contenteditable");
+//     // If the field contains any HTML tags, fallback to flash
+//     if (/<[^>]*>/.test(field.innerHTML) && field.innerHTML.indexOf('<span class="presendai-highlight">') === -1) {
+//         console.warn("⚠️ Field contains HTML tags – falling back to field flash");
+//         return false;
+//     }
+
+//     removeHighlights(field);
+
+//     // Collect all text nodes
+//     const walker = document.createTreeWalker(field, NodeFilter.SHOW_TEXT, null, false);
+//     const textNodes = [];
+//     let node;
+//     while (node = walker.nextNode()) textNodes.push(node);
+
+//     // Build character‑to‑node map
+//     let currentPos = 0;
+//     const nodeMap = textNodes.map(node => {
+//         const start = currentPos;
+//         const end = currentPos + node.nodeValue.length;
+//         currentPos = end;
+//         return { node, start, end };
+//     });
+
+//     // Sort entities in reverse order to avoid position shifts
+//     const sorted = [...entities].sort((a, b) => b.start - a.start);
+//     for (const ent of sorted) {
+//         const { start, end } = ent;
+//         for (const item of nodeMap) {
+//             if (start >= item.end) continue;
+//             if (end <= item.start) break;
+//             const overlapStart = Math.max(start, item.start);
+//             const overlapEnd = Math.min(end, item.end);
+//             if (overlapStart < overlapEnd) {
+//                 const node = item.node;
+//                 const text = node.nodeValue;
+//                 const before = text.substring(0, overlapStart - item.start);
+//                 const middle = text.substring(overlapStart - item.start, overlapEnd - item.start);
+//                 const after = text.substring(overlapEnd - item.start);
+
+//                 const span = document.createElement('span');
+//                 span.className = 'presendai-highlight';
+//                 span.textContent = middle;
+
+//                 const fragment = document.createDocumentFragment();
+//                 if (before) fragment.appendChild(document.createTextNode(before));
+//                 fragment.appendChild(span);
+//                 if (after) fragment.appendChild(document.createTextNode(after));
+
+//                 node.parentNode.replaceChild(fragment, node);
+//                 break; // move to next entity
+//             }
+//         }
+//     }
+//     return true;
+// }
+
+// function highlightFieldFlash(field) {
+//     field.classList.add('presendai-flash');
+//     setTimeout(() => field.classList.remove('presendai-flash'), HIGHLIGHT_DURATION);
+//     // Also set a background that fades out
+//     field.style.backgroundColor = '#fff2b0';
+//     setTimeout(() => field.style.backgroundColor = '', HIGHLIGHT_DURATION);
+// }
+
+// function highlightField(field, entities) {
+//     if (!entities || entities.length === 0) return;
+//     try {
+//         if (field.isContentEditable) {
+//             const success = highlightContentEditablePlain(field, entities);
+//             if (!success) highlightFieldFlash(field);
+//         } else {
+//             highlightFieldFlash(field);
+//         }
+//     } catch (e) {
+//         console.error("❌ Highlight error, falling back to flash:", e);
+//         highlightFieldFlash(field);
+//     }
+// }
+
+// // ==================== BACKEND COMMUNICATION ====================
+// async function sendToBackend(text) {
+//     // Try runtime messaging first (most reliable, bypasses CORS)
+//     if (runtime) {
+//         try {
+//             const result = await Promise.race([
+//                 new Promise((resolve, reject) => {
+//                     runtime.sendMessage({ action: "maskText", text, url: BACKEND_URL }, (response) => {
+//                         if (chrome.runtime.lastError) {
+//                             reject(new Error(chrome.runtime.lastError.message));
+//                         } else {
+//                             resolve(response);
+//                         }
+//                     });
+//                 }),
+//                 new Promise((_, reject) => setTimeout(() => reject(new Error("⏱️ Runtime message timeout")), MESSAGE_TIMEOUT))
+//             ]);
+//             return { success: true, data: result.data };
+//         } catch (e) {
+//             console.warn("⚠️ Runtime messaging failed, falling back to fetch:", e);
+//         }
+//     }
+
+//     // Fallback: direct fetch (may be blocked by CORS/Shields, but we try)
+//     try {
+//         const controller = new AbortController();
+//         const timeoutId = setTimeout(() => controller.abort(), MESSAGE_TIMEOUT);
+//         const res = await fetch(BACKEND_URL, {
+//             method: 'POST',
+//             headers: { 'Content-Type': 'application/json' },
+//             body: JSON.stringify({ text }),
+//             signal: controller.signal
+//         });
+//         clearTimeout(timeoutId);
+//         if (!res.ok) {
+//             const errText = await res.text();
+//             throw new Error(`HTTP ${res.status}: ${errText}`);
+//         }
+//         return { success: true, data: await res.json() };
+//     } catch (e) {
+//         return { success: false, error: e.message };
+//     }
+// }
+
+// // ==================== CORE MASKING FUNCTION ====================
+// async function maskAndReplace(field, text) {
+//     console.log("🔍 maskAndReplace called with text:", text);
+//     if (!text.trim()) return;
+//     if (isAlreadyMasked(text)) {
+//         console.log("⏭️ Text already masked, skipping.");
+//         return;
+//     }
+//     if (isProcessing.get(field)) {
+//         console.log("⏳ Already processing this field, skipping duplicate.");
+//         return;
+//     }
+
+//     const cursorSaved = saveCursorPosition(field);
+//     console.log("📌 Cursor saved:", cursorSaved);
+//     isProcessing.set(field, true);
+
+//     try {
+//         const result = await sendToBackend(text);
+//         console.log("📦 Backend result:", result);
+//         if (!result.success) {
+//             console.error("❌ Backend error:", result.error);
+//             return;
+//         }
+
+//         const data = result.data;
+
+//         // Highlight if entities exist
+//         if (data.entities && data.entities.length > 0) {
+//             highlightField(field, data.entities);
+//         }
+
+//         // Wait a bit for user to see highlight, then replace
+//         setTimeout(() => {
+//             try {
+//                 if (data.status === 'ok' && data.masked && data.masked !== text) {
+//                     console.log("✏️ Replacing with:", data.masked);
+//                     isUpdating = true;
+//                     setFieldText(field, data.masked);
+//                     restoreCursorPosition(field, cursorSaved, data.masked);
+//                     isUpdating = false;
+//                     lastSentText.set(field, data.masked);
+//                 } else {
+//                     console.log("ℹ️ No change needed");
+//                     lastSentText.set(field, data.masked || text);
+//                 }
+//             } catch (e) {
+//                 console.error("❌ Error during replacement:", e);
+//             } finally {
+//                 isProcessing.set(field, false);
+//             }
+//         }, HIGHLIGHT_DURATION);
+
+//     } catch (e) {
+//         console.error("❌ Fatal error in maskAndReplace:", e);
+//         isProcessing.set(field, false);
+//     }
+// }
+
+// // ==================== INPUT HANDLER ====================
+// function onInput(event) {
+//     if (isUpdating) return;
+//     const field = event.target;
+//     const currentText = getFieldText(field);
+//     const lastSent = lastSentText.get(field);
+//     if (currentText === lastSent) return;
+
+//     if (!field._debouncedMask) {
+//         field._debouncedMask = debounce((f, t) => maskAndReplace(f, t), DEBOUNCE_DELAY);
+//     }
+//     field._debouncedMask(field, currentText);
+// }
+
+// // ==================== ATTACH LISTENERS ====================
+// function attachListener(field) {
+//     if (!trackedFields.has(field)) {
+//         field.addEventListener('input', onInput);
+//         trackedFields.add(field);
+//         console.log('👂 Listening to', field);
+//     }
+// }
+
+// function scanAndAttach() {
+//     const selectors = [
+//         'input[type="text"]', 'input[type="search"]', 'input[type="tel"]',
+//         'input[type="url"]', 'input[type="email"]', 'input[type="password"]',
+//         'input[type="number"]', 'textarea', '[contenteditable="true"]'
+//     ];
+//     document.querySelectorAll(selectors.join(',')).forEach(attachListener);
+// }
+
+// // ==================== MUTATION OBSERVER ====================
+// let observerTimeout;
+// function handleMutations() {
+//     clearTimeout(observerTimeout);
+//     observerTimeout = setTimeout(() => {
+//         console.log("🔍 Scanning for dynamically added fields...");
+//         scanAndAttach();
+//     }, OBSERVER_DEBOUNCE);
+// }
+
+// function observeDynamicFields() {
+//     new MutationObserver(handleMutations).observe(document.body, { childList: true, subtree: true });
+//     console.log("👁️ MutationObserver active");
+// }
+
+// // ==================== INITIALISATION ====================
+// injectHighlightStyles();
+// if (document.readyState === 'loading') {
+//     document.addEventListener('DOMContentLoaded', () => { scanAndAttach(); observeDynamicFields(); });
+// } else {
+//     scanAndAttach();
+//     observeDynamicFields();
+// }
+
+
+
+// day 19 update 
+
+// // content.js – Day 19: Stability Guards
+// console.log("🔒 PreSendAI content script loaded – Day 19 (Stability Guards)");
+
+// // ==================== CONFIGURATION ====================
+// const BACKEND_URL = "http://localhost:5000/scan";
+// const DEBOUNCE_DELAY = 1000;                // 1 second pause after typing
+// const OBSERVER_DEBOUNCE = 300;               // ms for MutationObserver
+// const HIGHLIGHT_DURATION = 800;               // ms – how long highlights stay before replacement
+// const MESSAGE_TIMEOUT = 5000;                  // ms – max wait for background response
+// const MAX_TEXT_LENGTH = 5000;                   // characters – don't send longer texts
+
+// // Placeholders (must match MASK_LABELS in masker.py)
+// const MASK_PLACEHOLDERS = ["[NAME]", "[EMAIL]", "[PHONE]", "[ID]", "[AADHAAR]", "[CARD]", "[ADDRESS]", "[ORG]", "[REDACTED]"];
+
+// // ==================== CROSS‑BROWSER RUNTIME DETECTION ====================
+// const runtime = (typeof chrome !== 'undefined' && chrome.runtime) ? chrome.runtime :
+//                 (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : null;
+// if (!runtime) console.warn("⚠️ No extension runtime API found. Direct fetch will be used (may be blocked by CORS).");
+
+// // ==================== KEEP‑ALIVE ====================
+// if (runtime) {
+//     try {
+//         const port = runtime.connect({ name: "presendai-keepalive" });
+//         port.onMessage.addListener((msg) => {
+//             if (msg.type === "ping") {
+//                 // Just a keep‑alive, no action needed
+//             }
+//         });
+//     } catch (e) {
+//         console.warn("⚠️ Could not establish keep‑alive port:", e);
+//     }
+// }
+
+// // ==================== STATE TRACKING ====================
+// const trackedFields = new WeakSet();
+// const lastSentText = new WeakMap();
+// const isProcessing = new WeakMap();
+// let isUpdating = false;                        // true while we are programmatically updating a field
+
+// // Map to store pending replacement timeouts per field (to cancel if new input arrives)
+// const pendingTimeouts = new WeakMap();
+
+// // ==================== HELPER FUNCTIONS ====================
+// function isAlreadyMasked(text) {
+//     return MASK_PLACEHOLDERS.some(p => text.includes(p));
+// }
+
+// function isEditableField(element) {
+//     if (!element || !element.nodeType || element.nodeType !== Node.ELEMENT_NODE) return false;
+//     const tag = element.tagName.toLowerCase();
+//     if (tag === 'input') {
+//         const type = element.type.toLowerCase();
+//         return ['text', 'search', 'tel', 'url', 'email', 'password', 'number'].includes(type);
+//     }
+//     if (tag === 'textarea') return true;
+//     if (element.isContentEditable) return true;
+//     return false;
+// }
+
+// function getFieldText(field) {
+//     const tag = field.tagName.toLowerCase();
+//     if (tag === 'input' || tag === 'textarea') return field.value;
+//     if (field.isContentEditable) return field.innerText;
+//     return '';
+// }
+
+// function setFieldText(field, newText) {
+//     const tag = field.tagName.toLowerCase();
+//     if (tag === 'input' || tag === 'textarea') field.value = newText;
+//     else if (field.isContentEditable) field.innerText = newText;
+// }
+
+// function debounce(func, wait) {
+//     let timeout;
+//     return function(...args) {
+//         clearTimeout(timeout);
+//         timeout = setTimeout(() => func(...args), wait);
+//     };
+// }
+
+// // ==================== CURSOR PRESERVATION ====================
+// function saveCursorPosition(field) {
+//     const tag = field.tagName.toLowerCase();
+//     if (tag === 'input' || tag === 'textarea') {
+//         return { type: 'input', start: field.selectionStart, end: field.selectionEnd };
+//     }
+//     if (field.isContentEditable) {
+//         const sel = window.getSelection();
+//         if (sel.rangeCount === 0) return null;
+//         const range = sel.getRangeAt(0);
+//         if (field.contains(range.startContainer)) {
+//             const preCaretRange = range.cloneRange();
+//             preCaretRange.selectNodeContents(field);
+//             preCaretRange.setEnd(range.startContainer, range.startOffset);
+//             return { type: 'contenteditable', offset: preCaretRange.toString().length };
+//         }
+//     }
+//     return null;
+// }
+
+// function restoreCursorPosition(field, saved, newText) {
+//     if (!saved) return;
+//     const tag = field.tagName.toLowerCase();
+//     if (saved.type === 'input' && (tag === 'input' || tag === 'textarea')) {
+//         const newLength = newText.length;
+//         field.setSelectionRange(Math.min(saved.start, newLength), Math.min(saved.end, newLength));
+//     } else if (saved.type === 'contenteditable' && field.isContentEditable) {
+//         const newOffset = Math.min(saved.offset, newText.length);
+//         const textNode = field.firstChild;
+//         if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+//             const range = document.createRange();
+//             range.setStart(textNode, newOffset);
+//             range.collapse(true);
+//             window.getSelection().removeAllRanges();
+//             window.getSelection().addRange(range);
+//         }
+//     }
+// }
+
+// // ==================== HIGHLIGHT ENGINE ====================
+// function injectHighlightStyles() {
+//     const styleId = 'presendai-highlight-styles';
+//     if (document.getElementById(styleId)) return;
+//     const style = document.createElement('style');
+//     style.id = styleId;
+//     style.textContent = `
+//         .presendai-highlight {
+//             background-color: #fff2b0 !important;   /* soft yellow */
+//             color: #000 !important;
+//             border-radius: 4px;
+//             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+//             transition: background-color 0.2s, box-shadow 0.2s;
+//             padding: 0 2px;
+//             margin: 0 -2px;
+//         }
+//         .presendai-flash {
+//             animation: presendai-flash-bg 0.6s ease;
+//         }
+//         @keyframes presendai-flash-bg {
+//             0% { background-color: inherit; }
+//             50% { background-color: #fff2b0; }
+//             100% { background-color: inherit; }
+//         }
+//     `;
+//     document.head.appendChild(style);
+// }
+
+// function removeHighlights(field) {
+//     if (!field.isContentEditable) return;
+//     const highlights = field.querySelectorAll('.presendai-highlight');
+//     highlights.forEach(span => {
+//         const parent = span.parentNode;
+//         parent.replaceChild(document.createTextNode(span.textContent), span);
+//         parent.normalize();
+//     });
+// }
+
+// function highlightContentEditablePlain(field, entities) {
+//     console.log("🎨 Applying per‑word highlight to contenteditable");
+//     // If the field contains any HTML tags, fallback to flash
+//     if (/<[^>]*>/.test(field.innerHTML) && field.innerHTML.indexOf('<span class="presendai-highlight">') === -1) {
+//         console.warn("⚠️ Field contains HTML tags – falling back to field flash");
+//         return false;
+//     }
+
+//     removeHighlights(field);
+
+//     // Collect all text nodes
+//     const walker = document.createTreeWalker(field, NodeFilter.SHOW_TEXT, null, false);
+//     const textNodes = [];
+//     let node;
+//     while (node = walker.nextNode()) textNodes.push(node);
+
+//     // Build character‑to‑node map
+//     let currentPos = 0;
+//     const nodeMap = textNodes.map(node => {
+//         const start = currentPos;
+//         const end = currentPos + node.nodeValue.length;
+//         currentPos = end;
+//         return { node, start, end };
+//     });
+
+//     // Sort entities in reverse order to avoid position shifts
+//     const sorted = [...entities].sort((a, b) => b.start - a.start);
+//     for (const ent of sorted) {
+//         const { start, end } = ent;
+//         for (const item of nodeMap) {
+//             if (start >= item.end) continue;
+//             if (end <= item.start) break;
+//             const overlapStart = Math.max(start, item.start);
+//             const overlapEnd = Math.min(end, item.end);
+//             if (overlapStart < overlapEnd) {
+//                 const node = item.node;
+//                 const text = node.nodeValue;
+//                 const before = text.substring(0, overlapStart - item.start);
+//                 const middle = text.substring(overlapStart - item.start, overlapEnd - item.start);
+//                 const after = text.substring(overlapEnd - item.start);
+
+//                 const span = document.createElement('span');
+//                 span.className = 'presendai-highlight';
+//                 span.textContent = middle;
+
+//                 const fragment = document.createDocumentFragment();
+//                 if (before) fragment.appendChild(document.createTextNode(before));
+//                 fragment.appendChild(span);
+//                 if (after) fragment.appendChild(document.createTextNode(after));
+
+//                 node.parentNode.replaceChild(fragment, node);
+//                 break; // move to next entity
+//             }
+//         }
+//     }
+//     return true;
+// }
+
+// function highlightFieldFlash(field) {
+//     field.classList.add('presendai-flash');
+//     setTimeout(() => field.classList.remove('presendai-flash'), HIGHLIGHT_DURATION);
+//     // Also set a background that fades out
+//     field.style.backgroundColor = '#FFD700';
+//     setTimeout(() => field.style.backgroundColor = '', HIGHLIGHT_DURATION);
+// }
+
+// function highlightField(field, entities) {
+//     if (!entities || entities.length === 0) return;
+//     try {
+//         if (field.isContentEditable) {
+//             const success = highlightContentEditablePlain(field, entities);
+//             if (!success) highlightFieldFlash(field);
+//         } else {
+//             highlightFieldFlash(field);
+//         }
+//     } catch (e) {
+//         console.error("❌ Highlight error, falling back to flash:", e);
+//         highlightFieldFlash(field);
+//     }
+// }
+
+// // ==================== BACKEND COMMUNICATION ====================
+// async function sendToBackend(text) {
+//     // Try runtime messaging first (most reliable, bypasses CORS)
+//     if (runtime) {
+//         try {
+//             // Check if runtime is still connected (extension not reloaded)
+//             if (!runtime.id) {
+//                 throw new Error("Extension context invalidated");
+//             }
+//             const result = await Promise.race([
+//                 new Promise((resolve, reject) => {
+//                     runtime.sendMessage({ action: "maskText", text, url: BACKEND_URL }, (response) => {
+//                         if (chrome.runtime.lastError) {
+//                             reject(new Error(chrome.runtime.lastError.message));
+//                         } else {
+//                             resolve(response);
+//                         }
+//                     });
+//                 }),
+//                 new Promise((_, reject) => setTimeout(() => reject(new Error("⏱️ Runtime message timeout")), MESSAGE_TIMEOUT))
+//             ]);
+//             return { success: true, data: result.data };
+//         } catch (e) {
+//             console.warn("⚠️ Runtime messaging failed, falling back to fetch:", e);
+//         }
+//     }
+
+//     // Fallback: direct fetch (may be blocked by CORS/Shields, but we try)
+//     try {
+//         const controller = new AbortController();
+//         const timeoutId = setTimeout(() => controller.abort(), MESSAGE_TIMEOUT);
+//         const res = await fetch(BACKEND_URL, {
+//             method: 'POST',
+//             headers: { 'Content-Type': 'application/json' },
+//             body: JSON.stringify({ text }),
+//             signal: controller.signal
+//         });
+//         clearTimeout(timeoutId);
+//         if (!res.ok) {
+//             const errText = await res.text();
+//             throw new Error(`HTTP ${res.status}: ${errText}`);
+//         }
+//         return { success: true, data: await res.json() };
+//     } catch (e) {
+//         return { success: false, error: e.message };
+//     }
+// }
+
+// // ==================== CORE MASKING FUNCTION ====================
+// async function maskAndReplace(field, text) {
+//     console.log("🔍 maskAndReplace called with text:", text);
+
+//     // 1. Skip empty text
+//     if (!text.trim()) return;
+
+//     // 2. Skip already masked text
+//     if (isAlreadyMasked(text)) {
+//         console.log("⏭️ Text already masked, skipping.");
+//         return;
+//     }
+
+//     // 3. Max length guard
+//     if (text.length > MAX_TEXT_LENGTH) {
+//         console.warn(`⚠️ Text too long (${text.length} > ${MAX_TEXT_LENGTH}), skipping.`);
+//         return;
+//     }
+
+//     // 4. Skip if already processing
+//     if (isProcessing.get(field)) {
+//         console.log("⏳ Already processing this field, skipping duplicate.");
+//         return;
+//     }
+
+//     // 5. Cancel any pending replacement timeout for this field
+//     if (pendingTimeouts.has(field)) {
+//         clearTimeout(pendingTimeouts.get(field));
+//         pendingTimeouts.delete(field);
+//     }
+
+//     const cursorSaved = saveCursorPosition(field);
+//     console.log("📌 Cursor saved:", cursorSaved);
+//     isProcessing.set(field, true);
+
+//     try {
+//         const result = await sendToBackend(text);
+//         console.log("📦 Backend result:", result);
+//         if (!result.success) {
+//             console.error("❌ Backend error:", result.error);
+//             return;
+//         }
+
+//         const data = result.data;
+
+//         // Highlight if entities exist
+//         if (data.entities && data.entities.length > 0) {
+//             highlightField(field, data.entities);
+//         }
+
+//         // Wait a bit for user to see highlight, then replace
+//         const timeoutId = setTimeout(() => {
+//             try {
+//                 if (data.status === 'ok' && data.masked && data.masked !== text) {
+//                     console.log("✏️ Replacing with:", data.masked);
+//                     isUpdating = true;
+//                     setFieldText(field, data.masked);
+//                     restoreCursorPosition(field, cursorSaved, data.masked);
+//                     isUpdating = false;
+//                     lastSentText.set(field, data.masked);
+//                 } else {
+//                     console.log("ℹ️ No change needed");
+//                     lastSentText.set(field, data.masked || text);
+//                 }
+//             } catch (e) {
+//                 console.error("❌ Error during replacement:", e);
+//             } finally {
+//                 isProcessing.set(field, false);
+//                 pendingTimeouts.delete(field);
+//             }
+//         }, HIGHLIGHT_DURATION);
+
+//         pendingTimeouts.set(field, timeoutId);
+
+//     } catch (e) {
+//         console.error("❌ Fatal error in maskAndReplace:", e);
+//         isProcessing.set(field, false);
+//     }
+// }
+
+// // ==================== INPUT HANDLER ====================
+// function onInput(event) {
+//     if (isUpdating) return;
+//     const field = event.target;
+//     const currentText = getFieldText(field);
+//     const lastSent = lastSentText.get(field);
+//     if (currentText === lastSent) return;
+
+//     if (!field._debouncedMask) {
+//         field._debouncedMask = debounce((f, t) => maskAndReplace(f, t), DEBOUNCE_DELAY);
+//     }
+//     field._debouncedMask(field, currentText);
+// }
+
+// // ==================== ATTACH LISTENERS ====================
+// function attachListener(field) {
+//     if (!trackedFields.has(field)) {
+//         field.addEventListener('input', onInput);
+//         trackedFields.add(field);
+//         console.log('👂 Listening to', field);
+//     }
+// }
+
+// function scanAndAttach() {
+//     const selectors = [
+//         'input[type="text"]', 'input[type="search"]', 'input[type="tel"]',
+//         'input[type="url"]', 'input[type="email"]', 'input[type="password"]',
+//         'input[type="number"]', 'textarea', '[contenteditable="true"]'
+//     ];
+//     document.querySelectorAll(selectors.join(',')).forEach(attachListener);
+// }
+
+// // ==================== MUTATION OBSERVER ====================
+// let observerTimeout;
+// function handleMutations() {
+//     clearTimeout(observerTimeout);
+//     observerTimeout = setTimeout(() => {
+//         console.log("🔍 Scanning for dynamically added fields...");
+//         scanAndAttach();
+//     }, OBSERVER_DEBOUNCE);
+// }
+
+// function observeDynamicFields() {
+//     new MutationObserver(handleMutations).observe(document.body, { childList: true, subtree: true });
+//     console.log("👁️ MutationObserver active");
+// }
+
+// // ==================== INITIALISATION ====================
+// injectHighlightStyles();
+// if (document.readyState === 'loading') {
+//     document.addEventListener('DOMContentLoaded', () => { scanAndAttach(); observeDynamicFields(); });
+// } else {
+//     scanAndAttach();
+//     observeDynamicFields();
+// }
+
+
+// day 19 final code 
+
+// content.js – Day 19: Stability Guards
+console.log("🔒 PreSendAI content script loaded – Day 19 (Stability Guards)");
 
 // ==================== CONFIGURATION ====================
 const BACKEND_URL = "http://localhost:5000/scan";
@@ -4038,6 +4860,7 @@ const DEBOUNCE_DELAY = 1000;                // 1 second pause after typing
 const OBSERVER_DEBOUNCE = 300;               // ms for MutationObserver
 const HIGHLIGHT_DURATION = 800;               // ms – how long highlights stay before replacement
 const MESSAGE_TIMEOUT = 5000;                  // ms – max wait for background response
+const MAX_TEXT_LENGTH = 5000;                   // characters – don't send longer texts
 
 // Placeholders (must match MASK_LABELS in masker.py)
 const MASK_PLACEHOLDERS = ["[NAME]", "[EMAIL]", "[PHONE]", "[ID]", "[AADHAAR]", "[CARD]", "[ADDRESS]", "[ORG]", "[REDACTED]"];
@@ -4066,6 +4889,9 @@ const trackedFields = new WeakSet();
 const lastSentText = new WeakMap();
 const isProcessing = new WeakMap();
 let isUpdating = false;                        // true while we are programmatically updating a field
+
+// Map to store pending replacement timeouts per field (to cancel if new input arrives)
+const pendingTimeouts = new WeakMap();
 
 // ==================== HELPER FUNCTIONS ====================
 function isAlreadyMasked(text) {
@@ -4152,7 +4978,7 @@ function injectHighlightStyles() {
     style.id = styleId;
     style.textContent = `
         .presendai-highlight {
-            background-color: #fff2b0 !important;   /* soft yellow */
+            background-color: #fff2b0 !important;
             color: #000 !important;
             border-radius: 4px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
@@ -4184,7 +5010,6 @@ function removeHighlights(field) {
 
 function highlightContentEditablePlain(field, entities) {
     console.log("🎨 Applying per‑word highlight to contenteditable");
-    // If the field contains any HTML tags, fallback to flash
     if (/<[^>]*>/.test(field.innerHTML) && field.innerHTML.indexOf('<span class="presendai-highlight">') === -1) {
         console.warn("⚠️ Field contains HTML tags – falling back to field flash");
         return false;
@@ -4192,13 +5017,11 @@ function highlightContentEditablePlain(field, entities) {
 
     removeHighlights(field);
 
-    // Collect all text nodes
     const walker = document.createTreeWalker(field, NodeFilter.SHOW_TEXT, null, false);
     const textNodes = [];
     let node;
     while (node = walker.nextNode()) textNodes.push(node);
 
-    // Build character‑to‑node map
     let currentPos = 0;
     const nodeMap = textNodes.map(node => {
         const start = currentPos;
@@ -4207,7 +5030,6 @@ function highlightContentEditablePlain(field, entities) {
         return { node, start, end };
     });
 
-    // Sort entities in reverse order to avoid position shifts
     const sorted = [...entities].sort((a, b) => b.start - a.start);
     for (const ent of sorted) {
         const { start, end } = ent;
@@ -4233,7 +5055,7 @@ function highlightContentEditablePlain(field, entities) {
                 if (after) fragment.appendChild(document.createTextNode(after));
 
                 node.parentNode.replaceChild(fragment, node);
-                break; // move to next entity
+                break;
             }
         }
     }
@@ -4243,7 +5065,6 @@ function highlightContentEditablePlain(field, entities) {
 function highlightFieldFlash(field) {
     field.classList.add('presendai-flash');
     setTimeout(() => field.classList.remove('presendai-flash'), HIGHLIGHT_DURATION);
-    // Also set a background that fades out
     field.style.backgroundColor = '#fff2b0';
     setTimeout(() => field.style.backgroundColor = '', HIGHLIGHT_DURATION);
 }
@@ -4265,9 +5086,11 @@ function highlightField(field, entities) {
 
 // ==================== BACKEND COMMUNICATION ====================
 async function sendToBackend(text) {
-    // Try runtime messaging first (most reliable, bypasses CORS)
     if (runtime) {
         try {
+            if (!runtime.id) {
+                throw new Error("Extension context invalidated");
+            }
             const result = await Promise.race([
                 new Promise((resolve, reject) => {
                     runtime.sendMessage({ action: "maskText", text, url: BACKEND_URL }, (response) => {
@@ -4286,7 +5109,6 @@ async function sendToBackend(text) {
         }
     }
 
-    // Fallback: direct fetch (may be blocked by CORS/Shields, but we try)
     try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), MESSAGE_TIMEOUT);
@@ -4310,14 +5132,24 @@ async function sendToBackend(text) {
 // ==================== CORE MASKING FUNCTION ====================
 async function maskAndReplace(field, text) {
     console.log("🔍 maskAndReplace called with text:", text);
+
     if (!text.trim()) return;
     if (isAlreadyMasked(text)) {
         console.log("⏭️ Text already masked, skipping.");
         return;
     }
+    if (text.length > MAX_TEXT_LENGTH) {
+        console.warn(`⚠️ Text too long (${text.length} > ${MAX_TEXT_LENGTH}), skipping.`);
+        return;
+    }
     if (isProcessing.get(field)) {
         console.log("⏳ Already processing this field, skipping duplicate.");
         return;
+    }
+
+    if (pendingTimeouts.has(field)) {
+        clearTimeout(pendingTimeouts.get(field));
+        pendingTimeouts.delete(field);
     }
 
     const cursorSaved = saveCursorPosition(field);
@@ -4334,13 +5166,11 @@ async function maskAndReplace(field, text) {
 
         const data = result.data;
 
-        // Highlight if entities exist
         if (data.entities && data.entities.length > 0) {
             highlightField(field, data.entities);
         }
 
-        // Wait a bit for user to see highlight, then replace
-        setTimeout(() => {
+        const timeoutId = setTimeout(() => {
             try {
                 if (data.status === 'ok' && data.masked && data.masked !== text) {
                     console.log("✏️ Replacing with:", data.masked);
@@ -4357,8 +5187,11 @@ async function maskAndReplace(field, text) {
                 console.error("❌ Error during replacement:", e);
             } finally {
                 isProcessing.set(field, false);
+                pendingTimeouts.delete(field);
             }
         }, HIGHLIGHT_DURATION);
+
+        pendingTimeouts.set(field, timeoutId);
 
     } catch (e) {
         console.error("❌ Fatal error in maskAndReplace:", e);
