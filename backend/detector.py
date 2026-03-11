@@ -3996,23 +3996,722 @@ All regex patterns are robust and case‑insensitive where appropriate.
 
 
 
-# day 19 final code 
+# # day 19 final code 
 
+# import re
+# import logging
+# from typing import List, Dict, Any, Optional
+
+# import spacy
+# from .config import MAX_TEXT_LENGTH
+
+# logger = logging.getLogger(__name__)
+
+# # ----------------------------------------------------------------------
+# # Globals
+# # ----------------------------------------------------------------------
+# _nlp: Optional[spacy.Language] = None
+
+# # Priority for overlap resolution (higher = more important)
+# PRIORITY_MAP = {
+#     "EMAIL": 5,
+#     "PHONE": 4,
+#     "ADDRESS": 3,
+#     "AADHAAR": 2,
+#     "CARD": 2,
+#     "ID": 2,
+#     "ORG": 1,
+#     "PERSON": 1
+# }
+
+# # ----------------------------------------------------------------------
+# # spaCy model (lazy‑loaded, NER only)
+# # ----------------------------------------------------------------------
+# def _get_spacy_model() -> spacy.Language:
+#     global _nlp
+#     if _nlp is None:
+#         logger.info("Loading spaCy model 'en_core_web_sm' (NER only)")
+#         try:
+#             _nlp = spacy.load(
+#                 "en_core_web_sm",
+#                 disable=["tagger", "parser", "attribute_ruler", "lemmatizer"]
+#             )
+#         except OSError:
+#             logger.error("SpaCy model not found. Run: python -m spacy download en_core_web_sm")
+#             raise
+#     return _nlp
+
+# # ----------------------------------------------------------------------
+# # Common name list (case‑insensitive) – expanded
+# # ----------------------------------------------------------------------
+# COMMON_NAMES = {
+#     # Indian names
+#     "ram", "rama", "shyam", "ravi", "kumar", "raj", "rani", "amit", "sunil",
+#     "vijay", "ajay", "suresh", "mahesh", "rohit", "sharma", "ganesha", "rahul",
+#     "priya", "anita", "neha", "pooja", "deepak", "vikas", "rakesh", "sita",
+#     "gita", "lakshmi", "krishna", "arjun", "bharat", "karan", "arav", "vihaan",
+#     "advik", "anaya", "diya", "atharv", "vivaan", "pranav", "sai", "ishaan",
+#     "dhruv", "kavya", "aditi", "tanvi", "aarav", "ananya", "anika", "aryan",
+#     "ishan", "mohit", "sahil", "naveen", "pawan", "manoj", "jatin", "tarun",
+#     "abhishek", "ankit", "gaurav", "hitesh", "kunal", "lalit", "mayank",
+#     "nilesh", "parth", "rajat", "sachin", "tushar", "umesh", "vikram",
+#     "yogesh", "bhavna", "chandni", "divya", "ekta", "falguni", "geeta",
+#     "hemal", "ishita", "jaya", "kajal", "kiran", "lata", "madhu", "nandini",
+#     "payal", "rekha", "shanti", "tina", "urvi", "vandana", "yashoda",
+#     "sneha", "sejal",
+#     # Western names
+#     "john", "jane", "mike", "sarah", "david", "lisa", "paul", "anna",
+#     "james", "mary", "robert", "patricia", "william", "jennifer", "richard",
+#     "linda", "joseph", "barbara", "thomas", "susan", "charles", "margaret",
+#     "christopher", "jessica", "daniel", "emily", "matthew", "ashley",
+#     "anthony", "kimberly", "donald", "sandra", "mark", "melissa", "steven",
+#     "elizabeth", "andrew", "amy", "kenneth", "carol", "joshua", "michelle",
+#     "kevin", "rebecca", "brian", "laura", "george", "karen", "edward",
+#     "deborah", "ronald", "cynthia", "timothy", "angela", "jason", "sharon",
+#     "jeffrey", "pamela", "ryan", "kathleen", "jacob", "helen", "gary",
+#     "shirley", "nicholas", "emma", "eric", "carolyn", "stephen", "janet",
+#     "larry", "catherine", "justin", "christine", "scott", "heather",
+#     "brandon", "diane", "benjamin", "julie", "samuel", "joyce", "gregory",
+#     "victoria", "alexander", "kelly", "patrick", "christina", "frank",
+#     "lauren", "raymond", "frances", "jack", "martha", "henry", "judith",
+#     "jerry", "cheryl", "aaron", "megan", "louis", "andrea", "charles",
+#     "tiffany", "russell", "amber", "bobby", "danielle", "phillip", "abigail",
+#     # Additional global names
+#     "mohammed", "ali", "fatima", "ahmed", "omar", "layla", "hassan", "hussain",
+#     "wei", "li", "chen", "wang", "zhang", "liu", "yang", "huang", "feng",
+#     "jose", "maria", "carlos", "ana", "luis", "juan", "diego", "sofia",
+#     "sergei", "olga", "dmitry", "natalia", "ivan", "tatyana", "vladimir",
+#     "hiroshi", "yuki", "takashi", "sakura", "kenji", "akira", "yuto",
+#     "emiko", "haruto", "hinata", "himari", "ren", "souta", "mei", "yuna",
+#     "kim", "lee", "park", "choi", "jung", "kang", "yoon", "lim", "han",
+#     "soo", "min", "ji", "hyun", "seo", "jin", "woo", "young",
+#     # Surnames
+#     "sharma", "verma", "gupta", "kumar", "singh", "patel", "reddy", "rao",
+#     "yadav", "jha", "ojha", "mishra", "dubey", "tripathi", "chaturvedi",
+#     "shukla", "pandey", "thakur", "mehta", "shah", "modi", "gandhi",
+#     "desai", "joshi", "kulkarni", "patil", "pawar", "more", "jadhav",
+#     "gaikwad", "ingale", "bhosale", "chavan", "nikam", "kadam", "bhosle",
+#     "kholi", "james", "jacky"
+# }
+
+# # ----------------------------------------------------------------------
+# # Single‑word organization names (case‑insensitive)
+# # ----------------------------------------------------------------------
+# SINGLE_WORD_ORGS = {
+#     "google", "microsoft", "apple", "amazon", "facebook", "meta", "netflix",
+#     "spotify", "twitter", "x", "linkedin", "whatsapp", "youtube", "instagram",
+#     "tiktok", "snapchat", "reddit", "discord", "slack", "zoom", "teams",
+#     "outlook", "gmail", "yahoo", "bing", "baidu", "yandex", "oracle", "ibm",
+#     "intel", "amd", "nvidia", "samsung", "sony", "panasonic", "lg", "philips",
+#     "huawei", "xiaomi", "oppo", "vivo", "oneplus", "nokia", "motorola",
+#     "porsche", "ferrari", "lamborghini", "bmw", "mercedes", "audi", "toyota",
+#     "honda", "ford", "chevrolet", "volkswagen", "hyundai", "kia", "tesla",
+#     "adidas", "nike", "puma", "reebok", "zara", "h&m", "gucci", "prada",
+#     "chanel", "hermes", "cartier", "rolex", "omega",
+#     "mcdonald's", "kfc", "subway", "ebay", "paypal", "visa", "mastercard",
+#     "discover", "jpmorgan", "starbucks", "domino's"
+# }
+
+# # ----------------------------------------------------------------------
+# # Multi‑word organization names (case‑insensitive) – detected as whole phrases
+# # ----------------------------------------------------------------------
+# MULTI_WORD_ORGS = {
+#     "american express",
+#     "jp morgan chase",
+#     "goldman sachs",
+#     "morgan stanley",
+#     "bank of america",
+#     "wells fargo",
+#     "new york times",
+#     "wall street journal",
+#     "los angeles times",
+#     "united nations",
+#     "world health organization",
+#     "international monetary fund",
+#     "burger king",
+#     "domino's pizza",
+#     "starbucks coffee",
+#     "coca cola",
+#     "pizza hut",
+#     "louis vuitton"
+# }
+
+# # ----------------------------------------------------------------------
+# # Regex detectors (private)
+# # ----------------------------------------------------------------------
+# def _detect_emails(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
+#     return [{"label": "EMAIL", "text": m.group(), "start": m.start(), "end": m.end()}
+#             for m in re.finditer(pattern, text)]
+
+# def _detect_phones(text: str) -> List[Dict[str, Any]]:
+#     patterns = [
+#         r'\+\d{1,3}[-.\s]?\d{4,14}',               # +1 234 567 8900
+#         r'\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}',    # (123) 456-7890, 123-456-7890
+#         r'\b\d{5}[-.\s]?\d{5}\b',                   # Indian mobile: 98765 43210
+#     ]
+#     combined = '|'.join(f'(?:{p})' for p in patterns)
+#     compiled = re.compile(combined, re.VERBOSE)
+#     return [{"label": "PHONE", "text": m.group(), "start": m.start(), "end": m.end()}
+#             for m in compiled.finditer(text)]
+
+# def _detect_cards(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b'
+#     return [{"label": "CARD", "text": m.group(), "start": m.start(), "end": m.end()}
+#             for m in re.finditer(pattern, text)]
+
+# def _detect_aadhaar(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'\b\d{4}[- ]?\d{4}[- ]?\d{4}\b'
+#     return [{"label": "AADHAAR", "text": m.group(), "start": m.start(), "end": m.end()}
+#             for m in re.finditer(pattern, text)]
+
+# def _detect_ids(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'\b\d{9,}\b'
+#     return [{"label": "ID", "text": m.group(), "start": m.start(), "end": m.end()}
+#             for m in re.finditer(pattern, text)]
+
+# def _detect_addresses(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'\b\d{1,5}\s+[A-Za-z]+(?:\s+[A-Za-z]+){1,4}(?:\s+(?:road|rd|street|st|avenue|ave|lane|ln|drive|dr|court|ct|plaza|way))?\b'
+#     compiled = re.compile(pattern, re.IGNORECASE)
+#     matches = []
+#     for m in compiled.finditer(text):
+#         if len(m.group()) > 10:
+#             matches.append({"label": "ADDRESS", "text": m.group(), "start": m.start(), "end": m.end()})
+#     return matches
+
+# def _detect_common_names(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'\b(' + '|'.join(re.escape(name) for name in COMMON_NAMES) + r')\b'
+#     compiled = re.compile(pattern, re.IGNORECASE)
+#     return [{"label": "PERSON", "text": m.group(), "start": m.start(), "end": m.end()}
+#             for m in compiled.finditer(text)]
+
+# def _detect_single_word_orgs(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'\b(' + '|'.join(re.escape(name) for name in SINGLE_WORD_ORGS) + r')\b'
+#     compiled = re.compile(pattern, re.IGNORECASE)
+#     return [{"label": "ORG", "text": m.group(), "start": m.start(), "end": m.end()}
+#             for m in compiled.finditer(text)]
+
+# def _detect_multi_word_orgs(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'\b(' + '|'.join(re.escape(phrase) for phrase in MULTI_WORD_ORGS) + r')\b'
+#     compiled = re.compile(pattern, re.IGNORECASE)
+#     return [{"label": "ORG", "text": m.group(), "start": m.start(), "end": m.end()}
+#             for m in compiled.finditer(text)]
+
+# def _detect_allcaps_orgs(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'\b[A-Z]{2,}\b'
+#     return [{"label": "ORG", "text": m.group(), "start": m.start(), "end": m.end()}
+#             for m in re.finditer(pattern, text)]
+
+# def _detect_names_fallback(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b'
+#     return [{"label": "PERSON", "text": m.group(), "start": m.start(), "end": m.end()}
+#             for m in re.finditer(pattern, text)]
+
+# # ----------------------------------------------------------------------
+# # Public detection functions
+# # ----------------------------------------------------------------------
+# def detect_spacy_entities(text: str) -> List[Dict[str, Any]]:
+#     if not text:
+#         return []
+#     nlp = _get_spacy_model()
+#     detected = []
+#     try:
+#         doc = nlp(text)
+#         for ent in doc.ents:
+#             if ent.label_ in {"PERSON", "ORG"}:
+#                 detected.append({
+#                     "label": ent.label_,
+#                     "text": ent.text,
+#                     "start": ent.start_char,
+#                     "end": ent.end_char
+#                 })
+#     except Exception as e:
+#         logger.exception("SpaCy processing failed")
+#     return detected
+
+# def detect_regex_entities(text: str) -> List[Dict[str, Any]]:
+#     if not text:
+#         return []
+#     entities = []
+#     try:
+#         entities.extend(_detect_emails(text))
+#         entities.extend(_detect_phones(text))
+#         entities.extend(_detect_cards(text))
+#         entities.extend(_detect_aadhaar(text))
+#         entities.extend(_detect_ids(text))
+#         entities.extend(_detect_addresses(text))
+#         entities.extend(_detect_common_names(text))
+#         entities.extend(_detect_single_word_orgs(text))
+#         entities.extend(_detect_multi_word_orgs(text))
+#         entities.extend(_detect_allcaps_orgs(text))
+#         entities.extend(_detect_names_fallback(text))
+#     except Exception as e:
+#         logger.exception("Regex detection failed")
+#     return entities
+
+# def deduplicate_spans(spans: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+#     seen = set()
+#     unique = []
+#     for span in spans:
+#         key = (span['start'], span['end'], span['label'])
+#         if key not in seen:
+#             seen.add(key)
+#             unique.append(span)
+#     return unique
+
+# def resolve_overlaps(entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+#     if not entities:
+#         return []
+
+#     for idx, ent in enumerate(entities):
+#         if not all(k in ent for k in ('label', 'start', 'end')):
+#             raise ValueError(f"Entity {idx} missing required keys: {ent}")
+#         if not isinstance(ent['start'], int) or not isinstance(ent['end'], int):
+#             raise ValueError(f"Entity {idx} start/end must be integers: {ent}")
+#         if ent['start'] < 0 or ent['end'] <= ent['start']:
+#             raise ValueError(f"Entity {idx} has invalid span: {ent}")
+
+#     sorted_ents = sorted(
+#         entities,
+#         key=lambda e: (e['start'], - (e['end'] - e['start']), -PRIORITY_MAP.get(e['label'], 0))
+#     )
+
+#     resolved = []
+#     current = sorted_ents[0]
+
+#     for next_ent in sorted_ents[1:]:
+#         if next_ent['start'] < current['end']:
+#             if (next_ent['end'] - next_ent['start']) > (current['end'] - current['start']):
+#                 current = next_ent
+#         else:
+#             resolved.append(current)
+#             current = next_ent
+#     resolved.append(current)
+
+#     logger.debug("Resolved %d entities to %d", len(entities), len(resolved))
+#     return resolved
+
+# def detect_entities(raw_text: str) -> List[Dict[str, Any]]:
+#     if raw_text is None:
+#         return []
+#     if not isinstance(raw_text, str):
+#         raw_text = str(raw_text)
+
+#     if len(raw_text) > MAX_TEXT_LENGTH:
+#         logger.warning("Text exceeds max length (%d chars), returning empty", MAX_TEXT_LENGTH)
+#         return []
+
+#     spacy_spans = detect_spacy_entities(raw_text)
+#     regex_spans = detect_regex_entities(raw_text)
+
+#     all_spans = spacy_spans + regex_spans
+#     if not all_spans:
+#         return []
+
+#     all_spans = deduplicate_spans(all_spans)
+#     return resolve_overlaps(all_spans)
+
+
+# day 21 update with presidio model 
+# import re
+# import logging
+# import requests
+# from typing import List, Dict, Any, Optional
+
+# import spacy
+# from .config import Config
+
+# MAX_TEXT_LENGTH = Config.MAX_TEXT_LENGTH
+# PRESIDIO_ANALYZER_URL = Config.PRESIDIO_ANALYZER_URL
+
+# logger = logging.getLogger(__name__)
+
+# # ----------------------------------------------------------------------
+# # Globals
+# # ----------------------------------------------------------------------
+# _nlp: Optional[spacy.Language] = None
+
+# # Priority for overlap resolution (higher = more important)
+# PRIORITY_MAP = {
+#     "EMAIL": 5,
+#     "PHONE": 4,
+#     "ADDRESS": 3,
+#     "AADHAAR": 2,
+#     "CARD": 2,
+#     "ID": 2,
+#     "ORG": 1,
+#     "PERSON": 1
+# }
+
+# # ----------------------------------------------------------------------
+# # spaCy model (lazy‑loaded, NER only)
+# # ----------------------------------------------------------------------
+# def _get_spacy_model() -> spacy.Language:
+#     global _nlp
+#     if _nlp is None:
+#         logger.info("Loading spaCy model 'en_core_web_sm' (NER only)")
+#         try:
+#             _nlp = spacy.load(
+#                 "en_core_web_sm",
+#                 disable=["tagger", "parser", "attribute_ruler", "lemmatizer"]
+#             )
+#         except OSError:
+#             logger.error("SpaCy model not found. Run: python -m spacy download en_core_web_sm")
+#             raise
+#     return _nlp
+
+# # ----------------------------------------------------------------------
+# # Common name list (case‑insensitive) – expanded
+# # ----------------------------------------------------------------------
+# COMMON_NAMES = {
+#     # Indian names
+#     "ram", "rama", "shyam", "ravi", "kumar", "raj", "rani", "amit", "sunil",
+#     "vijay", "ajay", "suresh", "mahesh", "rohit", "sharma", "ganesha", "rahul",
+#     "priya", "anita", "neha", "pooja", "deepak", "vikas", "rakesh", "sita",
+#     "gita", "lakshmi", "krishna", "arjun", "bharat", "karan", "arav", "vihaan",
+#     "advik", "anaya", "diya", "atharv", "vivaan", "pranav", "sai", "ishaan",
+#     "dhruv", "kavya", "aditi", "tanvi", "aarav", "ananya", "anika", "aryan",
+#     "ishan", "mohit", "sahil", "naveen", "pawan", "manoj", "jatin", "tarun",
+#     "abhishek", "ankit", "gaurav", "hitesh", "kunal", "lalit", "mayank",
+#     "nilesh", "parth", "rajat", "sachin", "tushar", "umesh", "vikram",
+#     "yogesh", "bhavna", "chandni", "divya", "ekta", "falguni", "geeta",
+#     "hemal", "ishita", "jaya", "kajal", "kiran", "lata", "madhu", "nandini",
+#     "payal", "rekha", "shanti", "tina", "urvi", "vandana", "yashoda",
+#     "sneha", "sejal",
+#     # Western names
+#     "john", "jane", "mike", "sarah", "david", "lisa", "paul", "anna",
+#     "james", "mary", "robert", "patricia", "william", "jennifer", "richard",
+#     "linda", "joseph", "barbara", "thomas", "susan", "charles", "margaret",
+#     "christopher", "jessica", "daniel", "emily", "matthew", "ashley",
+#     "anthony", "kimberly", "donald", "sandra", "mark", "melissa", "steven",
+#     "elizabeth", "andrew", "amy", "kenneth", "carol", "joshua", "michelle",
+#     "kevin", "rebecca", "brian", "laura", "george", "karen", "edward",
+#     "deborah", "ronald", "cynthia", "timothy", "angela", "jason", "sharon",
+#     "jeffrey", "pamela", "ryan", "kathleen", "jacob", "helen", "gary",
+#     "shirley", "nicholas", "emma", "eric", "carolyn", "stephen", "janet",
+#     "larry", "catherine", "justin", "christine", "scott", "heather",
+#     "brandon", "diane", "benjamin", "julie", "samuel", "joyce", "gregory",
+#     "victoria", "alexander", "kelly", "patrick", "christina", "frank",
+#     "lauren", "raymond", "frances", "jack", "martha", "henry", "judith",
+#     "jerry", "cheryl", "aaron", "megan", "louis", "andrea", "charles",
+#     "tiffany", "russell", "amber", "bobby", "danielle", "phillip", "abigail",
+#     # Additional global names
+#     "mohammed", "ali", "fatima", "ahmed", "omar", "layla", "hassan", "hussain",
+#     "wei", "li", "chen", "wang", "zhang", "liu", "yang", "huang", "feng",
+#     "jose", "maria", "carlos", "ana", "luis", "juan", "diego", "sofia",
+#     "sergei", "olga", "dmitry", "natalia", "ivan", "tatyana", "vladimir",
+#     "hiroshi", "yuki", "takashi", "sakura", "kenji", "akira", "yuto",
+#     "emiko", "haruto", "hinata", "himari", "ren", "souta", "mei", "yuna",
+#     "kim", "lee", "park", "choi", "jung", "kang", "yoon", "lim", "han",
+#     "soo", "min", "ji", "hyun", "seo", "jin", "woo", "young",
+#     # Surnames
+#     "sharma", "verma", "gupta", "kumar", "singh", "patel", "reddy", "rao",
+#     "yadav", "jha", "ojha", "mishra", "dubey", "tripathi", "chaturvedi",
+#     "shukla", "pandey", "thakur", "mehta", "shah", "modi", "gandhi",
+#     "desai", "joshi", "kulkarni", "patil", "pawar", "more", "jadhav",
+#     "gaikwad", "ingale", "bhosale", "chavan", "nikam", "kadam", "bhosle",
+#     "kholi", "james", "jacky"
+# }
+
+# # ----------------------------------------------------------------------
+# # Single‑word organization names (case‑insensitive)
+# # ----------------------------------------------------------------------
+# SINGLE_WORD_ORGS = {
+#     "google", "microsoft", "apple", "amazon", "facebook", "meta", "netflix",
+#     "spotify", "twitter", "x", "linkedin", "whatsapp", "youtube", "instagram",
+#     "tiktok", "snapchat", "reddit", "discord", "slack", "zoom", "teams",
+#     "outlook", "gmail", "yahoo", "bing", "baidu", "yandex", "oracle", "ibm",
+#     "intel", "amd", "nvidia", "samsung", "sony", "panasonic", "lg", "philips",
+#     "huawei", "xiaomi", "oppo", "vivo", "oneplus", "nokia", "motorola",
+#     "porsche", "ferrari", "lamborghini", "bmw", "mercedes", "audi", "toyota",
+#     "honda", "ford", "chevrolet", "volkswagen", "hyundai", "kia", "tesla",
+#     "adidas", "nike", "puma", "reebok", "zara", "h&m", "gucci", "prada",
+#     "chanel", "hermes", "cartier", "rolex", "omega",
+#     "mcdonald's", "kfc", "subway", "ebay", "paypal", "visa", "mastercard",
+#     "discover", "jpmorgan", "starbucks", "domino's"
+# }
+
+# # ----------------------------------------------------------------------
+# # Multi‑word organization names (case‑insensitive) – detected as whole phrases
+# # ----------------------------------------------------------------------
+# MULTI_WORD_ORGS = {
+#     "american express",
+#     "jp morgan chase",
+#     "goldman sachs",
+#     "morgan stanley",
+#     "bank of america",
+#     "wells fargo",
+#     "new york times",
+#     "wall street journal",
+#     "los angeles times",
+#     "united nations",
+#     "world health organization",
+#     "international monetary fund",
+#     "burger king",
+#     "domino's pizza",
+#     "starbucks coffee",
+#     "coca cola",
+#     "pizza hut",
+#     "louis vuitton"
+# }
+
+# # ----------------------------------------------------------------------
+# # Presidio client (optional, used if available)
+# # ----------------------------------------------------------------------
+# def _detect_with_presidio(text: str) -> List[Dict[str, Any]]:
+#     """Call Presidio Analyzer service and return entities in our format."""
+#     presidio_url = getattr(Config, 'PRESIDIO_ANALYZER_URL', None)
+#     if not presidio_url:
+#         return []
+#     try:
+#         response = requests.post(
+#             presidio_url,
+#             json={"text": text, "language": "en"},
+#             timeout=2.0  # short timeout to avoid blocking
+#         )
+#         if response.status_code == 200:
+#             presidio_entities = response.json()
+#             # Convert Presidio format to our format
+#             converted = []
+#             label_map = {
+#                 "PERSON": "PERSON",
+#                 "EMAIL_ADDRESS": "EMAIL",
+#                 "PHONE_NUMBER": "PHONE",
+#                 "CREDIT_CARD": "CARD",
+#                 "LOCATION": None,       # optional – you could add ADDRESS if needed
+#                 "ORGANIZATION": "ORG",
+#                 "ADDRESS": "ADDRESS",
+#                 "ID": "ID",
+#                 "DATE_TIME": None       # ignore dates
+#             }
+#             for e in presidio_entities:
+#                 mapped_label = label_map.get(e["entity_type"])
+#                 if mapped_label:
+#                     converted.append({
+#                         "label": mapped_label,
+#                         "text": e["text"],
+#                         "start": e["start"],
+#                         "end": e["end"]
+#                     })
+#             return converted
+#     except Exception as e:
+#         logger.warning(f"Presidio detection failed: {e}")
+#     return []
+
+# # ----------------------------------------------------------------------
+# # Regex detectors (private)
+# # ----------------------------------------------------------------------
+# def _detect_emails(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
+#     return [{"label": "EMAIL", "text": m.group(), "start": m.start(), "end": m.end()}
+#             for m in re.finditer(pattern, text)]
+
+# def _detect_phones(text: str) -> List[Dict[str, Any]]:
+#     patterns = [
+#         r'\+\d{1,3}[-.\s]?\d{4,14}',               # +1 234 567 8900
+#         r'\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}',    # (123) 456-7890, 123-456-7890
+#         r'\b\d{5}[-.\s]?\d{5}\b',                   # Indian mobile: 98765 43210
+#     ]
+#     combined = '|'.join(f'(?:{p})' for p in patterns)
+#     compiled = re.compile(combined, re.VERBOSE)
+#     return [{"label": "PHONE", "text": m.group(), "start": m.start(), "end": m.end()}
+#             for m in compiled.finditer(text)]
+
+# def _detect_cards(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b'
+#     return [{"label": "CARD", "text": m.group(), "start": m.start(), "end": m.end()}
+#             for m in re.finditer(pattern, text)]
+
+# def _detect_aadhaar(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'\b\d{4}[- ]?\d{4}[- ]?\d{4}\b'
+#     return [{"label": "AADHAAR", "text": m.group(), "start": m.start(), "end": m.end()}
+#             for m in re.finditer(pattern, text)]
+
+# def _detect_ids(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'\b\d{9,}\b'
+#     return [{"label": "ID", "text": m.group(), "start": m.start(), "end": m.end()}
+#             for m in re.finditer(pattern, text)]
+
+# def _detect_addresses(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'\b\d{1,5}\s+[A-Za-z]+(?:\s+[A-Za-z]+){1,4}(?:\s+(?:road|rd|street|st|avenue|ave|lane|ln|drive|dr|court|ct|plaza|way))?\b'
+#     compiled = re.compile(pattern, re.IGNORECASE)
+#     matches = []
+#     for m in compiled.finditer(text):
+#         if len(m.group()) > 10:
+#             matches.append({"label": "ADDRESS", "text": m.group(), "start": m.start(), "end": m.end()})
+#     return matches
+
+# def _detect_common_names(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'\b(' + '|'.join(re.escape(name) for name in COMMON_NAMES) + r')\b'
+#     compiled = re.compile(pattern, re.IGNORECASE)
+#     return [{"label": "PERSON", "text": m.group(), "start": m.start(), "end": m.end()}
+#             for m in compiled.finditer(text)]
+
+# def _detect_single_word_orgs(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'\b(' + '|'.join(re.escape(name) for name in SINGLE_WORD_ORGS) + r')\b'
+#     compiled = re.compile(pattern, re.IGNORECASE)
+#     return [{"label": "ORG", "text": m.group(), "start": m.start(), "end": m.end()}
+#             for m in compiled.finditer(text)]
+
+# def _detect_multi_word_orgs(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'\b(' + '|'.join(re.escape(phrase) for phrase in MULTI_WORD_ORGS) + r')\b'
+#     compiled = re.compile(pattern, re.IGNORECASE)
+#     return [{"label": "ORG", "text": m.group(), "start": m.start(), "end": m.end()}
+#             for m in compiled.finditer(text)]
+
+# def _detect_allcaps_orgs(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'\b[A-Z]{2,}\b'
+#     return [{"label": "ORG", "text": m.group(), "start": m.start(), "end": m.end()}
+#             for m in re.finditer(pattern, text)]
+
+# def _detect_names_fallback(text: str) -> List[Dict[str, Any]]:
+#     pattern = r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b'
+#     return [{"label": "PERSON", "text": m.group(), "start": m.start(), "end": m.end()}
+#             for m in re.finditer(pattern, text)]
+
+# # ----------------------------------------------------------------------
+# # Public detection functions
+# # ----------------------------------------------------------------------
+# def detect_spacy_entities(text: str) -> List[Dict[str, Any]]:
+#     if not text:
+#         return []
+#     nlp = _get_spacy_model()
+#     detected = []
+#     try:
+#         doc = nlp(text)
+#         for ent in doc.ents:
+#             if ent.label_ in {"PERSON", "ORG"}:
+#                 detected.append({
+#                     "label": ent.label_,
+#                     "text": ent.text,
+#                     "start": ent.start_char,
+#                     "end": ent.end_char
+#                 })
+#     except Exception as e:
+#         logger.exception("SpaCy processing failed")
+#     return detected
+
+# def detect_regex_entities(text: str) -> List[Dict[str, Any]]:
+#     if not text:
+#         return []
+#     entities = []
+#     try:
+#         entities.extend(_detect_emails(text))
+#         entities.extend(_detect_phones(text))
+#         entities.extend(_detect_cards(text))
+#         entities.extend(_detect_aadhaar(text))
+#         entities.extend(_detect_ids(text))
+#         entities.extend(_detect_addresses(text))
+#         entities.extend(_detect_common_names(text))
+#         entities.extend(_detect_single_word_orgs(text))
+#         entities.extend(_detect_multi_word_orgs(text))
+#         entities.extend(_detect_allcaps_orgs(text))
+#         entities.extend(_detect_names_fallback(text))
+#     except Exception as e:
+#         logger.exception("Regex detection failed")
+#     return entities
+
+# def deduplicate_spans(spans: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+#     seen = set()
+#     unique = []
+#     for span in spans:
+#         key = (span['start'], span['end'], span['label'])
+#         if key not in seen:
+#             seen.add(key)
+#             unique.append(span)
+#     return unique
+
+# def resolve_overlaps(entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+#     if not entities:
+#         return []
+
+#     for idx, ent in enumerate(entities):
+#         if not all(k in ent for k in ('label', 'start', 'end')):
+#             raise ValueError(f"Entity {idx} missing required keys: {ent}")
+#         if not isinstance(ent['start'], int) or not isinstance(ent['end'], int):
+#             raise ValueError(f"Entity {idx} start/end must be integers: {ent}")
+#         if ent['start'] < 0 or ent['end'] <= ent['start']:
+#             raise ValueError(f"Entity {idx} has invalid span: {ent}")
+
+#     sorted_ents = sorted(
+#         entities,
+#         key=lambda e: (e['start'], - (e['end'] - e['start']), -PRIORITY_MAP.get(e['label'], 0))
+#     )
+
+#     resolved = []
+#     current = sorted_ents[0]
+
+#     for next_ent in sorted_ents[1:]:
+#         if next_ent['start'] < current['end']:
+#             if (next_ent['end'] - next_ent['start']) > (current['end'] - current['start']):
+#                 current = next_ent
+#         else:
+#             resolved.append(current)
+#             current = next_ent
+#     resolved.append(current)
+
+#     logger.debug("Resolved %d entities to %d", len(entities), len(resolved))
+#     return resolved
+
+# def detect_entities(raw_text: str) -> List[Dict[str, Any]]:
+#     if raw_text is None:
+#         return []
+#     if not isinstance(raw_text, str):
+#         raw_text = str(raw_text)
+
+#     if len(raw_text) > MAX_TEXT_LENGTH:
+#         logger.warning("Text exceeds max length (%d chars), returning empty", MAX_TEXT_LENGTH)
+#         return []
+
+#     # Try Presidio first (if configured)
+#     presidio_spans = _detect_with_presidio(raw_text)
+#     if presidio_spans:
+#         logger.info(f"Presidio found {len(presidio_spans)} entities")
+
+#     # Run our detectors
+#     spacy_spans = detect_spacy_entities(raw_text)
+#     regex_spans = detect_regex_entities(raw_text)
+
+#     # Combine all spans
+#     all_spans = presidio_spans + spacy_spans + regex_spans
+#     if not all_spans:
+#         return []
+
+#     all_spans = deduplicate_spans(all_spans)
+#     return resolve_overlaps(all_spans)
+
+
+# day 21 final update 
 import re
 import logging
+import requests
 from typing import List, Dict, Any, Optional
 
 import spacy
-from .config import MAX_TEXT_LENGTH
+from .config import Config
 
 logger = logging.getLogger(__name__)
 
 # ----------------------------------------------------------------------
-# Globals
+# Preload spaCy model at module load
 # ----------------------------------------------------------------------
 _nlp: Optional[spacy.Language] = None
+try:
+    logger.info("Preloading spaCy model 'en_core_web_sm' (NER only)")
+    _nlp = spacy.load(
+        "en_core_web_sm",
+        disable=["tagger", "parser", "attribute_ruler", "lemmatizer"]
+    )
+except OSError:
+    logger.error("SpaCy model not found. Run: python -m spacy download en_core_web_sm")
+    _nlp = None  # will cause fallback later
 
-# Priority for overlap resolution (higher = more important)
+def _get_spacy_model() -> Optional[spacy.Language]:
+    return _nlp
+
+# ----------------------------------------------------------------------
+# Priority for overlap resolution
+# ----------------------------------------------------------------------
 PRIORITY_MAP = {
     "EMAIL": 5,
     "PHONE": 4,
@@ -4025,26 +4724,9 @@ PRIORITY_MAP = {
 }
 
 # ----------------------------------------------------------------------
-# spaCy model (lazy‑loaded, NER only)
+# Common name list (unchanged) – keep your existing COMMON_NAMES
 # ----------------------------------------------------------------------
-def _get_spacy_model() -> spacy.Language:
-    global _nlp
-    if _nlp is None:
-        logger.info("Loading spaCy model 'en_core_web_sm' (NER only)")
-        try:
-            _nlp = spacy.load(
-                "en_core_web_sm",
-                disable=["tagger", "parser", "attribute_ruler", "lemmatizer"]
-            )
-        except OSError:
-            logger.error("SpaCy model not found. Run: python -m spacy download en_core_web_sm")
-            raise
-    return _nlp
-
-# ----------------------------------------------------------------------
-# Common name list (case‑insensitive) – expanded
-# ----------------------------------------------------------------------
-COMMON_NAMES = {
+COMMON_NAMES = { 
     # Indian names
     "ram", "rama", "shyam", "ravi", "kumar", "raj", "rani", "amit", "sunil",
     "vijay", "ajay", "suresh", "mahesh", "rohit", "sharma", "ganesha", "rahul",
@@ -4092,13 +4774,13 @@ COMMON_NAMES = {
     "desai", "joshi", "kulkarni", "patil", "pawar", "more", "jadhav",
     "gaikwad", "ingale", "bhosale", "chavan", "nikam", "kadam", "bhosle",
     "kholi", "james", "jacky"
-}
+}  
 
 # ----------------------------------------------------------------------
-# Single‑word organization names (case‑insensitive)
+# Single‑word and multi‑word organization lists (unchanged)
 # ----------------------------------------------------------------------
-SINGLE_WORD_ORGS = {
-    "google", "microsoft", "apple", "amazon", "facebook", "meta", "netflix",
+SINGLE_WORD_ORGS = {  
+     "google", "microsoft", "apple", "amazon", "facebook", "meta", "netflix",
     "spotify", "twitter", "x", "linkedin", "whatsapp", "youtube", "instagram",
     "tiktok", "snapchat", "reddit", "discord", "slack", "zoom", "teams",
     "outlook", "gmail", "yahoo", "bing", "baidu", "yandex", "oracle", "ibm",
@@ -4110,13 +4792,9 @@ SINGLE_WORD_ORGS = {
     "chanel", "hermes", "cartier", "rolex", "omega",
     "mcdonald's", "kfc", "subway", "ebay", "paypal", "visa", "mastercard",
     "discover", "jpmorgan", "starbucks", "domino's"
-}
-
-# ----------------------------------------------------------------------
-# Multi‑word organization names (case‑insensitive) – detected as whole phrases
-# ----------------------------------------------------------------------
-MULTI_WORD_ORGS = {
-    "american express",
+}  
+MULTI_WORD_ORGS = { 
+  "american express",
     "jp morgan chase",
     "goldman sachs",
     "morgan stanley",
@@ -4134,89 +4812,139 @@ MULTI_WORD_ORGS = {
     "coca cola",
     "pizza hut",
     "louis vuitton"
-}
+ }   
 
 # ----------------------------------------------------------------------
-# Regex detectors (private)
+# Pre‑compiled regex patterns (module level)
+# ----------------------------------------------------------------------
+_EMAIL_RE = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b')
+_PHONE_RE = re.compile(
+    r'(?:\+\d{1,3}[-.\s]?\d{4,14})|'          # +1 234 567 8900
+    r'\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}|'   # (123) 456-7890, 123-456-7890
+    r'\b\d{5}[-.\s]?\d{5}\b',                  # Indian mobile: 98765 43210
+    re.VERBOSE
+)
+_CARD_RE = re.compile(r'\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b')
+_AADHAAR_RE = re.compile(r'\b\d{4}[- ]?\d{4}[- ]?\d{4}\b')
+_ID_RE = re.compile(r'\b\d{9,}\b')
+_ADDRESS_RE = re.compile(
+    r'\b\d{1,5}\s+[A-Za-z]+(?:\s+[A-Za-z]+){1,4}(?:\s+(?:road|rd|street|st|avenue|ave|lane|ln|drive|dr|court|ct|plaza|way))?\b',
+    re.IGNORECASE
+)
+_COMMON_NAMES_RE = re.compile(
+    r'\b(' + '|'.join(re.escape(name) for name in COMMON_NAMES) + r')\b',
+    re.IGNORECASE
+)
+_SINGLE_WORD_ORGS_RE = re.compile(
+    r'\b(' + '|'.join(re.escape(name) for name in SINGLE_WORD_ORGS) + r')\b',
+    re.IGNORECASE
+)
+_MULTI_WORD_ORGS_RE = re.compile(
+    r'\b(' + '|'.join(re.escape(phrase) for phrase in MULTI_WORD_ORGS) + r')\b',
+    re.IGNORECASE
+)
+_ALLCAPS_ORG_RE = re.compile(r'\b[A-Z]{2,}\b')
+_NAMES_FALLBACK_RE = re.compile(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b')
+
+# ----------------------------------------------------------------------
+# Presidio client (optional)
+# ----------------------------------------------------------------------
+def _detect_with_presidio(text: str) -> List[Dict[str, Any]]:
+    if not Config.PRESIDIO_ANALYZER_URL:
+        return []
+    try:
+        response = requests.post(
+            Config.PRESIDIO_ANALYZER_URL,
+            json={"text": text, "language": "en"},
+            timeout=2.0
+        )
+        if response.status_code == 200:
+            presidio_entities = response.json()
+            converted = []
+            label_map = {
+                "PERSON": "PERSON",
+                "EMAIL_ADDRESS": "EMAIL",
+                "PHONE_NUMBER": "PHONE",
+                "CREDIT_CARD": "CARD",
+                "LOCATION": None,
+                "ORGANIZATION": "ORG",
+                "ADDRESS": "ADDRESS",
+                "ID": "ID",
+                "DATE_TIME": None
+            }
+            for e in presidio_entities:
+                mapped_label = label_map.get(e["entity_type"])
+                if mapped_label:
+                    converted.append({
+                        "label": mapped_label,
+                        "text": e["text"],
+                        "start": e["start"],
+                        "end": e["end"]
+                    })
+            return converted
+    except Exception as e:
+        logger.warning(f"Presidio detection failed: {e}")
+    return []
+
+# ----------------------------------------------------------------------
+# Detector functions (use pre‑compiled regexes)
 # ----------------------------------------------------------------------
 def _detect_emails(text: str) -> List[Dict[str, Any]]:
-    pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
     return [{"label": "EMAIL", "text": m.group(), "start": m.start(), "end": m.end()}
-            for m in re.finditer(pattern, text)]
+            for m in _EMAIL_RE.finditer(text)]
 
 def _detect_phones(text: str) -> List[Dict[str, Any]]:
-    patterns = [
-        r'\+\d{1,3}[-.\s]?\d{4,14}',               # +1 234 567 8900
-        r'\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}',    # (123) 456-7890, 123-456-7890
-        r'\b\d{5}[-.\s]?\d{5}\b',                   # Indian mobile: 98765 43210
-    ]
-    combined = '|'.join(f'(?:{p})' for p in patterns)
-    compiled = re.compile(combined, re.VERBOSE)
     return [{"label": "PHONE", "text": m.group(), "start": m.start(), "end": m.end()}
-            for m in compiled.finditer(text)]
+            for m in _PHONE_RE.finditer(text)]
 
 def _detect_cards(text: str) -> List[Dict[str, Any]]:
-    pattern = r'\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b'
     return [{"label": "CARD", "text": m.group(), "start": m.start(), "end": m.end()}
-            for m in re.finditer(pattern, text)]
+            for m in _CARD_RE.finditer(text)]
 
 def _detect_aadhaar(text: str) -> List[Dict[str, Any]]:
-    pattern = r'\b\d{4}[- ]?\d{4}[- ]?\d{4}\b'
     return [{"label": "AADHAAR", "text": m.group(), "start": m.start(), "end": m.end()}
-            for m in re.finditer(pattern, text)]
+            for m in _AADHAAR_RE.finditer(text)]
 
 def _detect_ids(text: str) -> List[Dict[str, Any]]:
-    pattern = r'\b\d{9,}\b'
     return [{"label": "ID", "text": m.group(), "start": m.start(), "end": m.end()}
-            for m in re.finditer(pattern, text)]
+            for m in _ID_RE.finditer(text)]
 
 def _detect_addresses(text: str) -> List[Dict[str, Any]]:
-    pattern = r'\b\d{1,5}\s+[A-Za-z]+(?:\s+[A-Za-z]+){1,4}(?:\s+(?:road|rd|street|st|avenue|ave|lane|ln|drive|dr|court|ct|plaza|way))?\b'
-    compiled = re.compile(pattern, re.IGNORECASE)
     matches = []
-    for m in compiled.finditer(text):
+    for m in _ADDRESS_RE.finditer(text):
         if len(m.group()) > 10:
             matches.append({"label": "ADDRESS", "text": m.group(), "start": m.start(), "end": m.end()})
     return matches
 
 def _detect_common_names(text: str) -> List[Dict[str, Any]]:
-    pattern = r'\b(' + '|'.join(re.escape(name) for name in COMMON_NAMES) + r')\b'
-    compiled = re.compile(pattern, re.IGNORECASE)
     return [{"label": "PERSON", "text": m.group(), "start": m.start(), "end": m.end()}
-            for m in compiled.finditer(text)]
+            for m in _COMMON_NAMES_RE.finditer(text)]
 
 def _detect_single_word_orgs(text: str) -> List[Dict[str, Any]]:
-    pattern = r'\b(' + '|'.join(re.escape(name) for name in SINGLE_WORD_ORGS) + r')\b'
-    compiled = re.compile(pattern, re.IGNORECASE)
     return [{"label": "ORG", "text": m.group(), "start": m.start(), "end": m.end()}
-            for m in compiled.finditer(text)]
+            for m in _SINGLE_WORD_ORGS_RE.finditer(text)]
 
 def _detect_multi_word_orgs(text: str) -> List[Dict[str, Any]]:
-    pattern = r'\b(' + '|'.join(re.escape(phrase) for phrase in MULTI_WORD_ORGS) + r')\b'
-    compiled = re.compile(pattern, re.IGNORECASE)
     return [{"label": "ORG", "text": m.group(), "start": m.start(), "end": m.end()}
-            for m in compiled.finditer(text)]
+            for m in _MULTI_WORD_ORGS_RE.finditer(text)]
 
 def _detect_allcaps_orgs(text: str) -> List[Dict[str, Any]]:
-    pattern = r'\b[A-Z]{2,}\b'
     return [{"label": "ORG", "text": m.group(), "start": m.start(), "end": m.end()}
-            for m in re.finditer(pattern, text)]
+            for m in _ALLCAPS_ORG_RE.finditer(text)]
 
 def _detect_names_fallback(text: str) -> List[Dict[str, Any]]:
-    pattern = r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b'
     return [{"label": "PERSON", "text": m.group(), "start": m.start(), "end": m.end()}
-            for m in re.finditer(pattern, text)]
+            for m in _NAMES_FALLBACK_RE.finditer(text)]
 
 # ----------------------------------------------------------------------
 # Public detection functions
 # ----------------------------------------------------------------------
 def detect_spacy_entities(text: str) -> List[Dict[str, Any]]:
-    if not text:
+    if not text or not _nlp:
         return []
-    nlp = _get_spacy_model()
     detected = []
     try:
-        doc = nlp(text)
+        doc = _nlp(text)
         for ent in doc.ents:
             if ent.label_ in {"PERSON", "ORG"}:
                 detected.append({
@@ -4297,14 +5025,19 @@ def detect_entities(raw_text: str) -> List[Dict[str, Any]]:
     if not isinstance(raw_text, str):
         raw_text = str(raw_text)
 
-    if len(raw_text) > MAX_TEXT_LENGTH:
-        logger.warning("Text exceeds max length (%d chars), returning empty", MAX_TEXT_LENGTH)
+    if len(raw_text) > Config.MAX_TEXT_LENGTH:
+        logger.warning("Text exceeds max length (%d chars), returning empty", Config.MAX_TEXT_LENGTH)
         return []
+
+    # Try Presidio first (if configured)
+    presidio_spans = _detect_with_presidio(raw_text)
+    if presidio_spans:
+        logger.info(f"Presidio found {len(presidio_spans)} entities")
 
     spacy_spans = detect_spacy_entities(raw_text)
     regex_spans = detect_regex_entities(raw_text)
 
-    all_spans = spacy_spans + regex_spans
+    all_spans = presidio_spans + spacy_spans + regex_spans
     if not all_spans:
         return []
 

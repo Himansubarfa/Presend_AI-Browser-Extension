@@ -5,7 +5,8 @@
   "description": "Automatically detect and mask sensitive information (PII) as you type.",
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "alarms"
   ],
   "host_permissions": [
     "<all_urls>"
