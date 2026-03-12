@@ -1,5 +1,5 @@
 # config.py
-MAX_TEXT_LENGTH = 10000
+MAX_TEXT_LENGTH = 1000000
 
 
 

@@ -336,7 +336,71 @@
 // });
 
 
-// day 21 update 
+// // day 21 update 
+// if (typeof browser === 'undefined' && typeof chrome !== 'undefined') {
+//     var browser = chrome;
+// }
+// console.log("🔧 PreSendAI background worker started – script executed");
+
+// const ports = new Set();
+
+// browser.runtime.onConnect.addListener((port) => {
+//     if (port.name === "presendai-keepalive") {
+//         ports.add(port);
+//         port.onDisconnect.addListener(() => ports.delete(port));
+//     }
+// });
+
+// setInterval(() => {
+//     ports.forEach(port => {
+//         try {
+//             port.postMessage({ type: "ping" });
+//         } catch (e) {
+//             ports.delete(port);
+//         }
+//     });
+// }, 25000);
+
+// browser.alarms.create('keepAlive', { periodInMinutes: 1 });
+// browser.alarms.onAlarm.addListener((alarm) => {
+//     if (alarm.name === 'keepAlive') {
+//         console.log("Alarm triggered – worker staying alive");
+//     }
+// });
+
+// browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
+//     console.log("Background received message:", request);
+//     if (request.action === "maskText") {
+//         const { text, url } = request;
+//         console.log("Background: masking text:", text);
+
+//         fetch(url, {
+//             method: 'POST',
+//             headers: { 'Content-Type': 'application/json' },
+//             body: JSON.stringify({ text })
+//         })
+//             .then(async response => {
+//                 console.log("Background fetch response status:", response.status);
+//                 if (!response.ok) {
+//                     const errorText = await response.text();
+//                     throw new Error(`HTTP ${response.status}: ${errorText}`);
+//                 }
+//                 return response.json();
+//             })
+//             .then(data => {
+//                 console.log("Background fetch success, sending response");
+//                 sendResponse({ success: true, data });
+//             })
+//             .catch(error => {
+//                 console.error("Background fetch error:", error);
+//                 sendResponse({ success: false, error: error.message });
+//             });
+
+//         return true;
+//     }
+// });
+
+//  day 21 upate 
 if (typeof browser === 'undefined' && typeof chrome !== 'undefined') {
     var browser = chrome;
 }
