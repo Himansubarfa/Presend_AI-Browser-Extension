@@ -1,5 +1,5 @@
 # config.py
-MAX_TEXT_LENGTH = 1000000
+MAX_TEXT_LENGTH = 200000
 
 
 
@@ -38,7 +38,7 @@ class Config:
     PORT = int(os.getenv('PORT', 5000))
 
     # Text limits
-    MAX_TEXT_LENGTH = int(os.getenv('MAX_TEXT_LENGTH', 10000))
+    MAX_TEXT_LENGTH = int(os.getenv('MAX_TEXT_LENGTH', 200000))
 
     # Security
     CORS_ORIGINS = os.getenv('CORS_ORIGINS', '*').split(',')
