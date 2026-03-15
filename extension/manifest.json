@@ -3,26 +3,82 @@
   "name": "PreSendAI - Privacy Masking",
   "version": "1.0.0",
   "description": "Automatically detect and mask sensitive information (PII) as you type.",
+  "minimum_chrome_version": "88",
+
+  "icons": {
+    "16":  "icons/icon16.png",
+    "48":  "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src https://localhost:5000;"
+  },
+
   "permissions": [
     "storage",
-    "activeTab",
-    "alarms"
+    "alarms",
+    "scripting"
   ],
+
   "host_permissions": [
-    "<all_urls>"
+    "https://localhost:5000/*",
+    "https://chat.openai.com/*",
+    "https://gemini.google.com/*",
+    "https://mail.google.com/*",
+    "https://docs.google.com/*",
+    "https://drive.google.com/*",
+    "https://www.deepseek.com/*",
+    "https://chat.deepseek.com/*"
   ],
+
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["dom.js", "api.js", "highlight.js", "content.js"],
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://gemini.google.com/*",
+        "https://mail.google.com/*",
+        "https://docs.google.com/*",
+        "https://drive.google.com/*",
+        "https://www.deepseek.com/*",
+        "https://chat.deepseek.com/*"
+      ],
+      "js": [
+        "dom.js",
+        "highlight.js",
+        "api.js",
+        "content.js"
+      ],
       "run_at": "document_end"
     }
   ],
+
   "action": {
     "default_popup": "popup.html",
-    "default_title": "PreSendAI"
+    "default_title": "PreSendAI",
+    "default_icon": {
+      "16":  "icons/icon16.png",
+      "48":  "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
+
   "background": {
     "service_worker": "background.js"
-  }
+  },
+
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/*"],
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://gemini.google.com/*",
+        "https://mail.google.com/*",
+        "https://docs.google.com/*",
+        "https://drive.google.com/*",
+        "https://www.deepseek.com/*",
+        "https://chat.deepseek.com/*"
+      ]
+    }
+  ]
 }
