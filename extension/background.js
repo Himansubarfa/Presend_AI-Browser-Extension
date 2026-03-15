@@ -400,66 +400,236 @@
 //     }
 // });
 
-//  day 21 upate 
+//  day 21 upate
+
+// if (typeof browser === 'undefined' && typeof chrome !== 'undefined') {
+//     var browser = chrome;
+// }
+// console.log("🔧 PreSendAI background worker started – script executed");
+
+// const ports = new Set();
+
+// browser.runtime.onConnect.addListener((port) => {
+//     if (port.name === "presendai-keepalive") {
+//         ports.add(port);
+//         port.onDisconnect.addListener(() => ports.delete(port));
+//     }
+// });
+
+// setInterval(() => {
+//     ports.forEach(port => {
+//         try {
+//             port.postMessage({ type: "ping" });
+//         } catch (e) {
+//             ports.delete(port);
+//         }
+//     });
+// }, 25000);
+
+// browser.alarms.create('keepAlive', { periodInMinutes: 1 });
+// browser.alarms.onAlarm.addListener((alarm) => {
+//     if (alarm.name === 'keepAlive') {
+//         console.log("Alarm triggered – worker staying alive");
+//     }
+// });
+
+// browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
+//     console.log("Background received message:", request);
+//     if (request.action === "maskText") {
+//         const { text, url } = request;
+//         console.log("Background: masking text:", text);
+
+//         fetch(url, {
+//             method: 'POST',
+//             headers: { 'Content-Type': 'application/json' },
+//             body: JSON.stringify({ text })
+//         })
+//             .then(async response => {
+//                 console.log("Background fetch response status:", response.status);
+//                 if (!response.ok) {
+//                     const errorText = await response.text();
+//                     throw new Error(`HTTP ${response.status}: ${errorText}`);
+//                 }
+//                 return response.json();
+//             })
+//             .then(data => {
+//                 console.log("Background fetch success, sending response");
+//                 sendResponse({ success: true, data });
+//             })
+//             .catch(error => {
+//                 console.error("Background fetch error:", error);
+//                 sendResponse({ success: false, error: error.message });
+//             });
+
+//         return true;
+//     }
+// });
+
+
+// background.js – Day 22: cross‑browser stable worker with alarms and port keep‑alive
+
+// if (typeof browser === 'undefined' && typeof chrome !== 'undefined') {
+//     var browser = chrome;
+// }
+// console.log("🔧 PreSendAI background worker started – script executed");
+
+// const ports = new Set();
+
+// browser.runtime.onConnect.addListener((port) => {
+//     if (port.name === "presendai-keepalive") {
+//         ports.add(port);
+//         port.onDisconnect.addListener(() => ports.delete(port));
+//     }
+// });
+
+// // Keep‑alive pings to connected ports (every 20 seconds)
+// setInterval(() => {
+//     ports.forEach(port => {
+//         try {
+//             port.postMessage({ type: "ping" });
+//         } catch (e) {
+//             ports.delete(port);
+//         }
+//     });
+// }, 20000);
+
+// // Alarms to wake the service worker every minute (prevents idle sleep)
+// browser.alarms.create('keepAlive', { periodInMinutes: 1 });
+// browser.alarms.onAlarm.addListener((alarm) => {
+//     if (alarm.name === 'keepAlive') {
+//         console.log("⏰ Alarm triggered – worker staying alive");
+//     }
+// });
+
+// // Message handler
+// browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
+//     console.log("Background received message:", request);
+
+//     if (request.action === "ping") {
+//         // just a keep‑alive, no response needed
+//         return false;
+//     }
+
+//     if (request.action === "maskText") {
+//         const { text, url } = request;
+//         console.log("Background: masking text:", text.substring(0, 100) + (text.length > 100 ? "…" : ""));
+
+//         fetch(url, {
+//             method: 'POST',
+//             headers: { 'Content-Type': 'application/json' },
+//             body: JSON.stringify({ text })
+//         })
+//             .then(async response => {
+//                 console.log("Background fetch response status:", response.status);
+//                 if (!response.ok) {
+//                     const errorText = await response.text();
+//                     throw new Error(`HTTP ${response.status}: ${errorText}`);
+//                 }
+//                 return response.json();
+//             })
+//             .then(data => {
+//                 console.log("Background fetch success, sending response");
+//                 sendResponse({ success: true, data });
+//             })
+//             .catch(error => {
+//                 console.error("Background fetch error:", error);
+//                 sendResponse({ success: false, error: error.message });
+//             });
+
+//         // Return true to indicate we'll respond asynchronously
+//         return true;
+//     }
+// });
+
+// day 23 claude 
 if (typeof browser === 'undefined' && typeof chrome !== 'undefined') {
     var browser = chrome;
 }
-console.log("🔧 PreSendAI background worker started – script executed");
+console.log("🔧 PreSendAI background worker started");
 
+// ==================== KEEP-ALIVE PORTS ====================
 const ports = new Set();
 
 browser.runtime.onConnect.addListener((port) => {
-    if (port.name === "presendai-keepalive") {
-        ports.add(port);
-        port.onDisconnect.addListener(() => ports.delete(port));
-    }
+    if (port.name !== "presendai-keepalive") return;
+    ports.add(port);
+    port.onDisconnect.addListener(() => ports.delete(port));
 });
 
+// Ping connected ports every 20 s to prevent idle suspension
 setInterval(() => {
-    ports.forEach(port => {
+    for (const port of ports) {
         try {
             port.postMessage({ type: "ping" });
         } catch (e) {
-            ports.delete(port);
+            ports.delete(port); // port disconnected
         }
-    });
-}, 25000);
+    }
+}, 20000);
 
+// ==================== SERVICE WORKER ALARM ====================
 browser.alarms.create('keepAlive', { periodInMinutes: 1 });
 browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === 'keepAlive') {
-        console.log("Alarm triggered – worker staying alive");
+        console.log("⏰ keepAlive alarm fired");
     }
 });
 
+// ==================== MESSAGE HANDLER ====================
 browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    console.log("Background received message:", request);
+    // Validate sender — only accept messages from our own extension tabs/frames
+    if (sender.id && sender.id !== browser.runtime.id) {
+        console.warn("⚠️ Message from unexpected sender:", sender.id);
+        return false;
+    }
+
+    if (request.action === "ping") {
+        // Keep-alive – no response needed
+        return false;
+    }
+
     if (request.action === "maskText") {
         const { text, url } = request;
-        console.log("Background: masking text:", text);
+
+        // Basic guard: reject obviously bad payloads before hitting the network
+        if (typeof text !== 'string' || !text.trim()) {
+            sendResponse({ success: false, error: "Empty or invalid text payload" });
+            return false;
+        }
+        if (typeof url !== 'string' || !url.startsWith('https://')) {
+            sendResponse({ success: false, error: "Invalid or non-HTTPS backend URL" });
+            return false;
+        }
+
+        console.log("Background: relaying text to backend (first 100 chars):",
+            text.substring(0, 100) + (text.length > 100 ? "…" : ""));
 
         fetch(url, {
-            method: 'POST',
+            method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text })
+            body:    JSON.stringify({ text }),
         })
-            .then(async response => {
-                console.log("Background fetch response status:", response.status);
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`HTTP ${response.status}: ${errorText}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                console.log("Background fetch success, sending response");
-                sendResponse({ success: true, data });
-            })
-            .catch(error => {
-                console.error("Background fetch error:", error);
-                sendResponse({ success: false, error: error.message });
-            });
+        .then(async (response) => {
+            if (!response.ok) {
+                const errorBody = await response.text().catch(() => '');
+                throw new Error(`HTTP ${response.status}: ${errorBody}`);
+            }
+            return response.json();
+        })
+        .then((data) => {
+            sendResponse({ success: true, data });
+        })
+        .catch((error) => {
+            console.error("Background fetch error:", error.message);
+            sendResponse({ success: false, error: error.message });
+        });
 
+        // Must return true to keep the message channel open for the async sendResponse
         return true;
     }
+
+    // Unknown action — don't leave the channel hanging
+    console.warn("Background: unknown action:", request.action);
+    sendResponse({ success: false, error: `Unknown action: ${request.action}` });
+    return false;
 });
