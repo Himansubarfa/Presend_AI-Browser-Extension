@@ -9801,43 +9801,1081 @@
 // }
 
 // claude code 
-if (typeof browser === 'undefined' && typeof chrome !== 'undefined') {
-    var browser = chrome;
-}
-console.log("🔒 PreSendAI content script loaded");
 
-// ==================== CONFIGURATION ====================
-const BACKEND_URL    = "https://localhost:5000/scan";
-const HEALTH_URL     = "https://localhost:5000/health";
-const DEBOUNCE_DELAY            = 300;
-const OBSERVER_DEBOUNCE         = 300;
-const HIGHLIGHT_DURATION        = 300;
-const MESSAGE_TIMEOUT           = 10000;
-const MAX_TEXT_LENGTH           = 20000;
-const HEALTH_CHECK_INTERVAL     = 30000;
-const HEALTH_CHECK_TIMEOUT      = 2000;
+// if (typeof browser === 'undefined' && typeof chrome !== 'undefined') {
+//     var browser = chrome;
+// }
+// console.log("🔒 PreSendAI content script loaded");
 
-const MASK_PLACEHOLDERS = [
-    "[NAME]","[EMAIL]","[PHONE]","[ID]","[AADHAAR]",
-    "[CARD]","[ADDRESS]","[ORG]","[REDACTED]"
-];
+// // ==================== CONFIGURATION ====================
+// const BACKEND_URL    = "https://localhost:5000/scan";
+// const HEALTH_URL     = "https://localhost:5000/health";
+// const DEBOUNCE_DELAY            = 300;
+// const OBSERVER_DEBOUNCE         = 300;
+// const HIGHLIGHT_DURATION        = 300;
+// const MESSAGE_TIMEOUT           = 10000;
+// const MAX_TEXT_LENGTH           = 20000;
+// const HEALTH_CHECK_INTERVAL     = 30000;
+// const HEALTH_CHECK_TIMEOUT      = 2000;
 
-// ==================== RUNTIME ====================
-const runtime = (typeof chrome  !== 'undefined' && chrome.runtime)  ? chrome.runtime  :
-                (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : null;
+// const MASK_PLACEHOLDERS = [
+//     "[NAME]","[EMAIL]","[PHONE]","[ID]","[AADHAAR]",
+//     "[CARD]","[ADDRESS]","[ORG]","[REDACTED]"
+// ];
+
+// // ==================== RUNTIME ====================
+// const runtime = (typeof chrome  !== 'undefined' && chrome.runtime)  ? chrome.runtime  :
+//                 (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : null;
+// if (!runtime) console.warn("⚠️ No extension runtime API found.");
+
+// // ==================== STATE ====================
+// let extensionEnabled = true;
+// let backendHealthy   = null;   // null = unknown; true/false = verified
+// let lastHealthCheck  = 0;
+
+// if (runtime) {
+//     browser.storage.local.get('enabled', (data) => {
+//         extensionEnabled = data.enabled !== false;
+//         console.log(`Extension enabled: ${extensionEnabled}`);
+//     });
+//     browser.storage.onChanged.addListener((changes, area) => {
+//         if (area === 'local' && changes.enabled) {
+//             extensionEnabled = changes.enabled.newValue !== false;
+//             console.log(`Extension enabled changed to: ${extensionEnabled}`);
+//         }
+//     });
+// }
+
+// // ==================== KEEP-ALIVE ====================
+// if (runtime) {
+//     try {
+//         const port = runtime.connect({ name: "presendai-keepalive" });
+//         port.onMessage.addListener((msg) => { if (msg.type === "ping") { /* alive */ } });
+//     } catch (e) {
+//         console.warn("⚠️ Could not establish keep-alive port:", e);
+//     }
+//     setInterval(() => {
+//         try { runtime.sendMessage({ action: "ping" }, () => { runtime.lastError; }); }
+//         catch (e) { /* context invalidated */ }
+//     }, 20000);
+// }
+
+// // ==================== HEALTH CHECK ====================
+// async function checkBackendHealth(force = false) {
+//     if (!extensionEnabled) return backendHealthy;
+//     const now = Date.now();
+//     if (!force && now - lastHealthCheck < HEALTH_CHECK_INTERVAL) return backendHealthy;
+
+//     lastHealthCheck = now;
+//     try {
+//         const controller = new AbortController();
+//         const tid = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT);
+//         const res = await fetch(HEALTH_URL, { method: 'GET', signal: controller.signal });
+//         clearTimeout(tid);
+//         backendHealthy = res.ok;
+//         if (!res.ok) console.warn("⚠️ Backend health check non-OK:", res.status);
+//     } catch (e) {
+//         backendHealthy = false;
+//         console.warn("⚠️ Backend unreachable:", e.message);
+//     }
+//     console.log(`Backend health: ${backendHealthy ? '🟢 healthy' : '🔴 unreachable'}`);
+//     return backendHealthy;
+// }
+
+// // Run initial check eagerly; subsequent checks are interval-gated
+// checkBackendHealth(true);
+
+// // Periodic health check – only when extension is enabled
+// let _healthInterval = null;
+// function _startHealthInterval() {
+//     if (_healthInterval) return;
+//     _healthInterval = setInterval(checkBackendHealth, HEALTH_CHECK_INTERVAL);
+// }
+// function _stopHealthInterval() {
+//     if (_healthInterval) { clearInterval(_healthInterval); _healthInterval = null; }
+// }
+// _startHealthInterval();
+
+// // ==================== FIELD TRACKING ====================
+// const trackedFields   = new WeakSet();
+// const lastSentText    = new WeakMap();
+// const isProcessing    = new WeakMap();
+// const pendingTimeouts = new WeakMap();
+// let isUpdating = false;
+
+// // ==================== HELPERS ====================
+// function isAlreadyMasked(text) {
+//     return MASK_PLACEHOLDERS.some(p => text.includes(p));
+// }
+
+// function isEditableField(el) {
+//     if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+//     const tag = el.tagName.toLowerCase();
+//     if (tag === 'input') {
+//         const t = (el.type || 'text').toLowerCase();
+//         return ['text','search','tel','url','email','password','number'].includes(t);
+//     }
+//     return tag === 'textarea' || el.isContentEditable;
+// }
+
+// function getFieldText(field) {
+//     const tag = field.tagName.toLowerCase();
+//     if (tag === 'input' || tag === 'textarea') return field.value || '';
+//     if (field.isContentEditable) return field.innerText || '';
+//     return '';
+// }
+
+// // ==================== SET FIELD TEXT ====================
+// function setFieldText(field, newText) {
+//     const tag = field.tagName.toLowerCase();
+//     if (tag === 'input' || tag === 'textarea') {
+//         field.value = newText;
+//         field.dispatchEvent(new Event('input', { bubbles: true }));
+//         return;
+//     }
+//     if (!field.isContentEditable) return;
+
+//     try {
+//         // Quill
+//         const quill = field.__quill || field._quill
+//             || field.closest?.('.ql-container')?.__quill
+//             || field.closest?.('.ql-container')?._quill;
+//         if (quill) { quill.setText(newText); return; }
+
+//         // ProseMirror
+//         const pm = field.classList?.contains('ProseMirror') || !!field.closest?.('.ProseMirror');
+//         if (pm) {
+//             const view = field._view || field.view
+//                 || field.parentElement?._view || field.parentElement?.view;
+//             if (view) {
+//                 const { state } = view;
+//                 const tr = state.tr.replaceWith(0, state.doc.content.size, state.schema.text(newText));
+//                 view.dispatch(tr);
+//                 return;
+//             }
+//         }
+
+//         // Generic contenteditable fallback – avoid spurious blur
+//         field.innerText = newText;
+//         field.dispatchEvent(new Event('input',  { bubbles: true }));
+//         field.dispatchEvent(new Event('change', { bubbles: true }));
+//     } catch (e) {
+//         console.error("❌ setFieldText error:", e);
+//         try {
+//             field.innerText = newText;
+//             field.dispatchEvent(new Event('input', { bubbles: true }));
+//         } catch (_) { /* last resort */ }
+//     }
+// }
+
+// // ==================== DEBOUNCE ====================
+// function debounce(fn, wait) {
+//     let t;
+//     return function(...args) { clearTimeout(t); t = setTimeout(() => fn(...args), wait); };
+// }
+
+// // ==================== CURSOR ====================
+// function saveCursorPosition(field) {
+//     const tag = field.tagName.toLowerCase();
+//     if (tag === 'input' || tag === 'textarea') {
+//         return { type: 'input', start: field.selectionStart, end: field.selectionEnd };
+//     }
+//     if (field.isContentEditable) {
+//         const sel = window.getSelection();
+//         if (!sel || sel.rangeCount === 0) return null;
+//         const range = sel.getRangeAt(0);
+//         if (!field.contains(range.startContainer)) return null;
+//         const pre = range.cloneRange();
+//         pre.selectNodeContents(field);
+//         pre.setEnd(range.startContainer, range.startOffset);
+//         return { type: 'contenteditable', offset: pre.toString().length };
+//     }
+//     return null;
+// }
+
+// function restoreCursorPosition(field, saved, newText) {
+//     if (!saved) return;
+//     const tag = field.tagName.toLowerCase();
+//     try {
+//         if (saved.type === 'input' && (tag === 'input' || tag === 'textarea')) {
+//             const len = newText.length;
+//             field.setSelectionRange(Math.min(saved.start, len), Math.min(saved.end, len));
+//         } else if (saved.type === 'contenteditable' && field.isContentEditable) {
+//             const offset  = Math.min(saved.offset, newText.length);
+//             const textNode = field.firstChild;
+//             if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+//                 const range = document.createRange();
+//                 range.setStart(textNode, offset);
+//                 range.collapse(true);
+//                 const sel = window.getSelection();
+//                 if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+//             }
+//         }
+//     } catch (e) {
+//         console.warn("⚠️ restoreCursorPosition failed:", e);
+//     }
+// }
+
+// // ==================== HIGHLIGHT ====================
+// function injectHighlightStyles() {
+//     const id = 'presendai-highlight-styles';
+//     if (document.getElementById(id)) return;
+//     const style = document.createElement('style');
+//     style.id = id;
+//     style.textContent = `
+//         .presendai-highlight {
+//             background-color: #fff2b0 !important;
+//             color: #000 !important;
+//             border-radius: 4px;
+//             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+//             transition: background-color 0.2s, box-shadow 0.2s;
+//             padding: 0 2px;
+//             margin: 0 -2px;
+//         }
+//         .presendai-flash { animation: presendai-flash-bg 0.6s ease; }
+//         @keyframes presendai-flash-bg {
+//             0%   { background-color: inherit; }
+//             50%  { background-color: #fff2b0; }
+//             100% { background-color: inherit; }
+//         }
+//     `;
+//     document.head.appendChild(style);
+// }
+
+// function removeHighlights(field) {
+//     if (!field.isContentEditable) return;
+//     field.querySelectorAll('.presendai-highlight').forEach(span => {
+//         const parent = span.parentNode;
+//         if (parent) {
+//             parent.replaceChild(document.createTextNode(span.textContent), span);
+//             parent.normalize();
+//         }
+//     });
+// }
+
+// function highlightContentEditablePlain(field, entities) {
+//     if (/<[^>]*>/.test(field.innerHTML) &&
+//         !field.innerHTML.includes('<span class="presendai-highlight">')) {
+//         return false;
+//     }
+//     removeHighlights(field);
+
+//     const walker = document.createTreeWalker(field, NodeFilter.SHOW_TEXT, null, false);
+//     const textNodes = [];
+//     let node;
+//     while ((node = walker.nextNode())) textNodes.push(node);
+
+//     let pos = 0;
+//     const nodeMap = textNodes.map(n => {
+//         const start = pos;
+//         pos += n.nodeValue.length;
+//         return { node: n, start, end: pos };
+//     });
+
+//     const sorted = [...entities].sort((a, b) => b.start - a.start);
+//     for (const ent of sorted) {
+//         for (const item of nodeMap) {
+//             if (ent.start >= item.end || ent.end <= item.start) continue;
+//             const oStart = Math.max(ent.start, item.start);
+//             const oEnd   = Math.min(ent.end,   item.end);
+//             if (oStart >= oEnd) continue;
+
+//             const text   = item.node.nodeValue;
+//             const before = text.substring(0, oStart - item.start);
+//             const middle = text.substring(oStart - item.start, oEnd - item.start);
+//             const after  = text.substring(oEnd - item.start);
+
+//             const span = document.createElement('span');
+//             span.className = 'presendai-highlight';
+//             span.textContent = middle;
+
+//             const frag = document.createDocumentFragment();
+//             if (before) frag.appendChild(document.createTextNode(before));
+//             frag.appendChild(span);
+//             if (after)  frag.appendChild(document.createTextNode(after));
+
+//             item.node.parentNode.replaceChild(frag, item.node);
+//             break;
+//         }
+//     }
+//     return true;
+// }
+
+// function highlightFieldFlash(field) {
+//     field.classList.add('presendai-flash');
+//     setTimeout(() => field.classList.remove('presendai-flash'), HIGHLIGHT_DURATION);
+//     field.style.backgroundColor = '#fff2b0';
+//     setTimeout(() => field.style.backgroundColor = '', HIGHLIGHT_DURATION);
+// }
+
+// function highlightField(field, entities) {
+//     if (!entities || entities.length === 0) return;
+//     try {
+//         if (field.isContentEditable) {
+//             if (!highlightContentEditablePlain(field, entities)) highlightFieldFlash(field);
+//         } else {
+//             highlightFieldFlash(field);
+//         }
+//     } catch (e) {
+//         console.error("❌ Highlight error, falling back to flash:", e);
+//         highlightFieldFlash(field);
+//     }
+// }
+
+// // ==================== BACKEND COMMUNICATION ====================
+// async function sendToBackend(text) {
+//     // If health is still unknown (very first call before first check completes), try anyway.
+//     if (backendHealthy === false) {
+//         // Attempt a re-check if the cache window has expired
+//         const healthy = await checkBackendHealth();
+//         if (!healthy) {
+//             console.log("⏸️ Backend unhealthy, skipping.");
+//             return { success: false, error: "Backend unreachable" };
+//         }
+//     }
+
+//     // --- Try runtime message (background.js relay) ---
+//     if (runtime) {
+//         try {
+//             if (!runtime.id) throw new Error("Extension context invalidated");
+
+//             const result = await Promise.race([
+//                 new Promise((resolve, reject) => {
+//                     runtime.sendMessage({ action: "maskText", text, url: BACKEND_URL }, (response) => {
+//                         // Use runtime.lastError (not hardcoded chrome.runtime.lastError) for Firefox compat
+//                         const err = runtime.lastError;
+//                         if (err) reject(new Error(err.message));
+//                         else if (!response) reject(new Error("Empty response from background"));
+//                         else resolve(response);
+//                     });
+//                 }),
+//                 new Promise((_, reject) =>
+//                     setTimeout(() => reject(new Error("Runtime message timeout")), MESSAGE_TIMEOUT)
+//                 )
+//             ]);
+//             // background.js sends { success, data } or { success: false, error }
+//             if (!result.success) return { success: false, error: result.error || "Background reported failure" };
+//             return { success: true, data: result.data };
+//         } catch (e) {
+//             console.warn("⚠️ Runtime messaging failed, falling back to fetch:", e.message);
+//         }
+//     }
+
+//     // --- Direct fetch fallback ---
+//     try {
+//         const controller = new AbortController();
+//         const tid = setTimeout(() => controller.abort(), MESSAGE_TIMEOUT);
+//         const res = await fetch(BACKEND_URL, {
+//             method:  'POST',
+//             headers: { 'Content-Type': 'application/json' },
+//             body:    JSON.stringify({ text }),
+//             signal:  controller.signal,
+//         });
+//         clearTimeout(tid);
+//         if (!res.ok) {
+//             const body = await res.text().catch(() => '');
+//             throw new Error(`HTTP ${res.status}: ${body}`);
+//         }
+//         const data = await res.json();
+//         backendHealthy = true;
+//         return { success: true, data };
+//     } catch (e) {
+//         backendHealthy = false;
+//         lastHealthCheck = Date.now(); // throttle re-check
+//         console.error("❌ Direct fetch failed:", e.message);
+//         return { success: false, error: e.message };
+//     }
+// }
+
+// // ==================== CORE MASKING ====================
+// async function maskAndReplace(field, text) {
+//     if (!extensionEnabled) return;
+//     if (!text || !text.trim()) return;
+//     if (isAlreadyMasked(text)) { console.log("⏭️ Already masked."); return; }
+//     if (text.length > MAX_TEXT_LENGTH) {
+//         console.warn(`⚠️ Text too long (${text.length}), skipping.`);
+//         return;
+//     }
+//     if (isProcessing.get(field)) {
+//         console.log("⏳ Already processing, skipping.");
+//         return;
+//     }
+
+//     // Clear any pending replacement timeout for this field
+//     if (pendingTimeouts.has(field)) {
+//         clearTimeout(pendingTimeouts.get(field));
+//         pendingTimeouts.delete(field);
+//     }
+
+//     const cursorSaved = saveCursorPosition(field);
+//     isProcessing.set(field, true);
+
+//     try {
+//         const result = await sendToBackend(text);
+
+//         if (!result.success) {
+//             console.error("❌ Backend error:", result.error);
+//             return; // finally below resets isProcessing
+//         }
+
+//         const data = result.data;
+//         if (!data || typeof data !== 'object') {
+//             console.error("❌ Invalid data from backend:", data);
+//             return;
+//         }
+
+//         if (Array.isArray(data.entities) && data.entities.length > 0) {
+//             highlightField(field, data.entities);
+//         }
+
+//         // Delay the text replacement to let highlight be visible briefly
+//         const tid = setTimeout(() => {
+//             try {
+//                 if (data.status === 'ok' && data.masked && data.masked !== text) {
+//                     isUpdating = true;
+//                     setFieldText(field, data.masked);
+//                     restoreCursorPosition(field, cursorSaved, data.masked);
+//                     isUpdating = false;
+//                     lastSentText.set(field, data.masked);
+//                 } else {
+//                     lastSentText.set(field, data.masked || text);
+//                 }
+//             } catch (e) {
+//                 console.error("❌ Replacement error:", e);
+//                 isUpdating = false; // ensure flag is cleared if setFieldText throws
+//             } finally {
+//                 isProcessing.set(field, false);
+//                 pendingTimeouts.delete(field);
+//             }
+//         }, HIGHLIGHT_DURATION);
+
+//         pendingTimeouts.set(field, tid);
+
+//     } catch (e) {
+//         console.error("❌ Fatal maskAndReplace error:", e);
+//     } finally {
+//         // Always release the processing lock if we didn't hand it off to the setTimeout
+//         if (!pendingTimeouts.has(field)) {
+//             isProcessing.set(field, false);
+//         }
+//     }
+// }
+
+// // ==================== QUILL CLIPBOARD HELPER ====================
+// function resolveField(target) {
+//     if (target.classList && target.classList.contains('ql-clipboard')) {
+//         const editor = target.closest?.('.ql-container')?.querySelector('.ql-editor');
+//         if (editor) return editor;
+//         return null; // can't resolve – skip
+//     }
+//     return target;
+// }
+
+// // ==================== INPUT & PASTE HANDLERS ====================
+// function onInput(event) {
+//     if (!extensionEnabled || isUpdating) return;
+
+//     const field = resolveField(event.target);
+//     if (!field) return;
+
+//     const currentText = getFieldText(field);
+//     if (currentText === lastSentText.get(field)) return;
+
+//     if (!field._debouncedMask) {
+//         field._debouncedMask = debounce((f, t) => maskAndReplace(f, t), DEBOUNCE_DELAY);
+//     }
+//     field._debouncedMask(field, currentText);
+// }
+
+// function onPaste(event) {
+//     // Wait for the DOM to reflect the pasted content
+//     setTimeout(() => {
+//         // Mirror the same ql-clipboard remapping as onInput
+//         const field = resolveField(event.target);
+//         if (!field) return;
+//         const currentText = getFieldText(field);
+//         if (currentText && !isAlreadyMasked(currentText)) {
+//             maskAndReplace(field, currentText);
+//         }
+//     }, 50);
+// }
+
+// // ==================== ATTACH LISTENERS ====================
+// function attachListener(field) {
+//     if (!trackedFields.has(field) && isEditableField(field)) {
+//         field.addEventListener('input', onInput);
+//         field.addEventListener('paste', onPaste);
+//         trackedFields.add(field);
+//     }
+// }
+
+// function scanAndAttach() {
+//     const sel = [
+//         'input[type="text"]','input[type="search"]','input[type="tel"]',
+//         'input[type="url"]','input[type="email"]','input[type="password"]',
+//         'input[type="number"]','textarea','[contenteditable="true"]'
+//     ].join(',');
+//     document.querySelectorAll(sel).forEach(attachListener);
+// }
+
+// // ==================== MUTATION OBSERVER ====================
+// let observerTimeout;
+// function handleMutations() {
+//     clearTimeout(observerTimeout);
+//     observerTimeout = setTimeout(() => { scanAndAttach(); }, OBSERVER_DEBOUNCE);
+// }
+
+// function observeDynamicFields() {
+//     if (!document.body) return;
+//     new MutationObserver(handleMutations).observe(document.body, { childList: true, subtree: true });
+// }
+
+// // ==================== INIT ====================
+// injectHighlightStyles();
+// if (document.readyState === 'loading') {
+//     document.addEventListener('DOMContentLoaded', () => { scanAndAttach(); observeDynamicFields(); });
+// } else {
+//     scanAndAttach();
+//     observeDynamicFields();
+// }
+
+// // day 24 update 
+// // content.js – main logic (state, event handlers, initialisation)
+// // Load order in manifest.json MUST be:
+// //   1. dom.js
+// //   2. highlight.js
+// //   3. api.js
+// //   4. content.js   ← this file
+
+// // ==================== CONFIGURATION ====================
+// // Single source of truth for all constants shared across modules.
+// // dom.js, highlight.js and api.js reference these as globals.
+// const BACKEND_URL           = "https://localhost:5000/scan";
+// const HEALTH_URL            = "https://localhost:5000/health";
+// const DEBOUNCE_DELAY        = 300;
+// const OBSERVER_DEBOUNCE     = 300;
+// const HIGHLIGHT_DURATION    = 300;   // used by highlight.js
+// const MESSAGE_TIMEOUT       = 10000;
+// const MAX_TEXT_LENGTH       = 20000;
+// const HEALTH_CHECK_INTERVAL = 30000;
+// const HEALTH_CHECK_TIMEOUT  = 2000;
+
+// const MASK_PLACEHOLDERS = [
+//     "[NAME]", "[EMAIL]", "[PHONE]", "[ID]",
+//     "[AADHAAR]", "[CARD]", "[ADDRESS]", "[ORG]", "[REDACTED]"
+// ];
+
+// // ==================== RUNTIME DETECTION ====================
+// const runtime = (typeof chrome  !== 'undefined' && chrome.runtime)  ? chrome.runtime  :
+//                 (typeof browser !== 'undefined' && browser.runtime) ? browser.runtime : null;
+// if (!runtime) console.warn("⚠️ No extension runtime API found.");
+
+// // ==================== SHARED STATE ====================
+// // These are globals intentionally – dom.js (attachListener) reads trackedFields.
+// let extensionEnabled  = true;
+// const trackedFields   = new WeakSet();
+// const lastSentText    = new WeakMap();
+// const isProcessing    = new WeakMap();
+// const pendingTimeouts = new WeakMap();
+// let isUpdating = false;
+
+// // ==================== ENABLED STATE FROM STORAGE ====================
+// if (runtime) {
+//     browser.storage.local.get('enabled', (data) => {
+//         extensionEnabled = data.enabled !== false;
+//         console.log(`Extension enabled: ${extensionEnabled}`);
+//     });
+//     browser.storage.onChanged.addListener((changes, area) => {
+//         if (area === 'local' && changes.enabled) {
+//             extensionEnabled = changes.enabled.newValue !== false;
+//             console.log(`Extension enabled changed to: ${extensionEnabled}`);
+//         }
+//     });
+// }
+
+// // ==================== KEEP-ALIVE ====================
+// if (runtime) {
+//     try {
+//         const port = runtime.connect({ name: "presendai-keepalive" });
+//         port.onMessage.addListener((msg) => { if (msg.type === "ping") { /* alive */ } });
+//     } catch (e) {
+//         console.warn("⚠️ Could not establish keep-alive port:", e);
+//     }
+//     // Use runtime.lastError (not hardcoded chrome.runtime) – Firefox compatible
+//     setInterval(() => {
+//         try {
+//             runtime.sendMessage({ action: "ping" }, () => { void runtime.lastError; });
+//         } catch (_) { /* context invalidated – ignore */ }
+//     }, 20000);
+// }
+
+// // ==================== HELPERS ====================
+// function isAlreadyMasked(text) {
+//     return MASK_PLACEHOLDERS.some(p => text.includes(p));
+// }
+
+// function debounce(fn, wait) {
+//     let t;
+//     return function(...args) {
+//         clearTimeout(t);
+//         t = setTimeout(() => fn(...args), wait);
+//     };
+// }
+
+// // ==================== INPUT HANDLER ====================
+// function onInput(event) {
+//     if (!extensionEnabled || isUpdating) return;
+
+//     // resolveEditableTarget defined in dom.js – handles ql-clipboard remapping
+//     const field = resolveEditableTarget(event.target);
+//     if (!field) return;
+
+//     const currentText = getFieldText(field);
+//     if (currentText === lastSentText.get(field)) return;
+
+//     if (!field._debouncedMask) {
+//         field._debouncedMask = debounce((f, t) => maskAndReplace(f, t), DEBOUNCE_DELAY);
+//     }
+//     field._debouncedMask(field, currentText);
+// }
+
+// // ==================== PASTE HANDLER ====================
+// function onPaste(event) {
+//     setTimeout(() => {
+//         // Same ql-clipboard remapping as onInput – both now go through resolveEditableTarget
+//         const field = resolveEditableTarget(event.target);
+//         if (!field) return;
+//         const currentText = getFieldText(field);
+//         if (currentText && !isAlreadyMasked(currentText)) {
+//             maskAndReplace(field, currentText);
+//         }
+//     }, 50);
+// }
+
+// // ==================== CORE MASKING ====================
+// async function maskAndReplace(field, text) {
+//     if (!extensionEnabled) return;
+//     if (!text || !text.trim()) return;
+//     if (isAlreadyMasked(text)) { console.log("⏭️ Already masked."); return; }
+//     if (text.length > MAX_TEXT_LENGTH) {
+//         console.warn(`⚠️ Text too long (${text.length}), skipping.`);
+//         return;
+//     }
+//     if (isProcessing.get(field)) {
+//         console.log("⏳ Already processing, skipping.");
+//         return;
+//     }
+
+//     // Clear any pending replacement for this field before starting a fresh one
+//     if (pendingTimeouts.has(field)) {
+//         clearTimeout(pendingTimeouts.get(field));
+//         pendingTimeouts.delete(field);
+//     }
+
+//     const cursorSaved = saveCursorPosition(field);  // dom.js
+//     isProcessing.set(field, true);
+
+//     try {
+//         // sendToBackend defined in api.js – no arguments needed, uses globals
+//         const result = await sendToBackend(text);
+
+//         if (!result.success) {
+//             console.error("❌ Backend error:", result.error);
+//             return; // finally below resets isProcessing
+//         }
+
+//         const data = result.data;
+//         if (!data || typeof data !== 'object') {
+//             console.error("❌ Invalid data from backend:", data);
+//             return;
+//         }
+
+//         if (Array.isArray(data.entities) && data.entities.length > 0) {
+//             highlightField(field, data.entities);   // highlight.js
+//         }
+
+//         // Delay replacement so the yellow highlight is briefly visible first
+//         const tid = setTimeout(() => {
+//             try {
+//                 if (data.status === 'ok' && data.masked && data.masked !== text) {
+//                     isUpdating = true;
+//                     setFieldText(field, data.masked);                    // dom.js
+//                     restoreCursorPosition(field, cursorSaved, data.masked); // dom.js
+//                     isUpdating = false;
+//                     lastSentText.set(field, data.masked);
+//                 } else {
+//                     lastSentText.set(field, data.masked || text);
+//                 }
+//             } catch (e) {
+//                 console.error("❌ Replacement error:", e);
+//                 isUpdating = false; // always clear the flag even if setFieldText throws
+//             } finally {
+//                 isProcessing.set(field, false);
+//                 pendingTimeouts.delete(field);
+//             }
+//         }, HIGHLIGHT_DURATION);
+
+//         pendingTimeouts.set(field, tid);
+
+//     } catch (e) {
+//         console.error("❌ Fatal maskAndReplace error:", e);
+//     } finally {
+//         // Release the processing lock only if the setTimeout hasn't taken ownership yet
+//         if (!pendingTimeouts.has(field)) {
+//             isProcessing.set(field, false);
+//         }
+//     }
+// }
+
+// // ==================== FIELD SELECTORS ====================
+// const FIELD_SELECTORS = [
+//     'input[type="text"]',  'input[type="search"]', 'input[type="tel"]',
+//     'input[type="url"]',   'input[type="email"]',  'input[type="password"]',
+//     'input[type="number"]','textarea',              '[contenteditable="true"]'
+// ];
+
+// // ==================== MUTATION OBSERVER ====================
+// let observerTimeout;
+// function handleMutations() {
+//     clearTimeout(observerTimeout);
+//     observerTimeout = setTimeout(() => {
+//         scanAndAttach(FIELD_SELECTORS, onInput, onPaste); // dom.js
+//     }, OBSERVER_DEBOUNCE);
+// }
+
+// function observeDynamicFields() {
+//     if (!document.body) return;
+//     new MutationObserver(handleMutations).observe(document.body, {
+//         childList: true,
+//         subtree:   true,
+//     });
+//     console.log("👁️ MutationObserver active");
+// }
+
+// // ==================== INITIALISATION ====================
+// function init() {
+//     injectHighlightStyles();                              // highlight.js
+//     scanAndAttach(FIELD_SELECTORS, onInput, onPaste);    // dom.js
+//     observeDynamicFields();
+//     checkBackendHealth(true);                             // api.js – eager first check
+//     setInterval(checkBackendHealth, HEALTH_CHECK_INTERVAL); // periodic pings
+//     console.log("🔒 PreSendAI initialised");
+// }
+
+// // Content scripts default to document_idle, but guard anyway
+// if (document.readyState === 'loading') {
+//     document.addEventListener('DOMContentLoaded', init);
+// } else {
+//     init();
+// }
+
+
+// // Day 24 final update 
+// // content.js – main logic (state, event handlers, initialisation)
+// // Load order in manifest.json MUST be:
+// //   1. dom.js
+// //   2. highlight.js
+// //   3. api.js
+// //   4. content.js   ← this file
+
+// // ==================== CROSS-BROWSER POLYFILL ====================
+// // Normalise to a single `browserAPI` variable that works on:
+// //   Chrome / Edge / Opera  → chrome.* APIs
+// //   Firefox                → browser.* APIs (already Promise-based)
+// //   Any other context      → null (extension APIs unavailable)
+// const browserAPI = (() => {
+//     if (typeof chrome !== 'undefined' && chrome.runtime) return chrome;
+//     if (typeof browser !== 'undefined' && browser.runtime) return browser;
+//     return null;
+// })();
+
+// const runtime = browserAPI ? browserAPI.runtime : null;
+// if (!runtime) console.warn("⚠️ No extension runtime API found.");
+
+// // ==================== CONFIGURATION ====================
+// // Single source of truth for ALL constants shared across modules.
+// // dom.js, highlight.js, and api.js read these as globals — do NOT
+// // re-declare any of these in those files.
+// const BACKEND_URL           = "https://localhost:5000/scan";
+// const HEALTH_URL            = "https://localhost:5000/health";
+// const DEBOUNCE_DELAY        = 300;
+// const OBSERVER_DEBOUNCE     = 300;
+// const HIGHLIGHT_DURATION    = 300;   // also used by highlight.js
+// const MESSAGE_TIMEOUT       = 10000;
+// const MAX_TEXT_LENGTH       = 20000;
+// const HEALTH_CHECK_INTERVAL = 30000;
+// const HEALTH_CHECK_TIMEOUT  = 2000;
+
+// const MASK_PLACEHOLDERS = [
+//     "[NAME]", "[EMAIL]", "[PHONE]", "[ID]",
+//     "[AADHAAR]", "[CARD]", "[ADDRESS]", "[ORG]", "[REDACTED]"
+// ];
+
+// // ==================== SHARED STATE ====================
+// // Intentional globals – dom.js (attachListener) reads trackedFields.
+// let extensionEnabled  = true;
+// const trackedFields   = new WeakSet();
+// const lastSentText    = new WeakMap();
+// const isProcessing    = new WeakMap();
+// const pendingTimeouts = new WeakMap();
+// let isUpdating = false;
+
+// // ==================== ENABLED STATE FROM STORAGE ====================
+// if (browserAPI) {
+//     // browserAPI.storage works on both Chrome (chrome.storage) and Firefox (browser.storage)
+//     browserAPI.storage.local.get('enabled', (data) => {
+//         extensionEnabled = data.enabled !== false;
+//         console.log(`Extension enabled: ${extensionEnabled}`);
+//     });
+//     browserAPI.storage.onChanged.addListener((changes, area) => {
+//         if (area === 'local' && changes.enabled) {
+//             extensionEnabled = changes.enabled.newValue !== false;
+//             console.log(`Extension enabled changed to: ${extensionEnabled}`);
+//         }
+//     });
+// }
+
+// // ==================== KEEP-ALIVE ====================
+// if (runtime) {
+//     try {
+//         const port = runtime.connect({ name: "presendai-keepalive" });
+//         port.onMessage.addListener((msg) => { if (msg.type === "ping") { /* alive */ } });
+//     } catch (e) {
+//         console.warn("⚠️ Could not establish keep-alive port:", e);
+//     }
+//     // Use runtime.lastError (not hardcoded chrome.runtime) – Firefox compatible
+//     setInterval(() => {
+//         try {
+//             runtime.sendMessage({ action: "ping" }, () => { void runtime.lastError; });
+//         } catch (_) { /* context invalidated – ignore */ }
+//     }, 20000);
+// }
+
+// // ==================== HELPERS ====================
+// function isAlreadyMasked(text) {
+//     return MASK_PLACEHOLDERS.some(p => text.includes(p));
+// }
+
+// function debounce(fn, wait) {
+//     let t;
+//     return function(...args) {
+//         clearTimeout(t);
+//         t = setTimeout(() => fn(...args), wait);
+//     };
+// }
+
+// // ==================== INPUT HANDLER ====================
+// function onInput(event) {
+//     if (!extensionEnabled || isUpdating) return;
+
+//     // resolveEditableTarget defined in dom.js – handles ql-clipboard remapping
+//     const field = resolveEditableTarget(event.target);
+//     if (!field) return;
+
+//     const currentText = getFieldText(field);
+//     if (currentText === lastSentText.get(field)) return;
+
+//     if (!field._debouncedMask) {
+//         field._debouncedMask = debounce((f, t) => maskAndReplace(f, t), DEBOUNCE_DELAY);
+//     }
+//     field._debouncedMask(field, currentText);
+// }
+
+// // ==================== PASTE HANDLER ====================
+// function onPaste(event) {
+//     setTimeout(() => {
+//         // Same ql-clipboard remapping as onInput – both now go through resolveEditableTarget
+//         const field = resolveEditableTarget(event.target);
+//         if (!field) return;
+//         const currentText = getFieldText(field);
+//         if (currentText && !isAlreadyMasked(currentText)) {
+//             maskAndReplace(field, currentText);
+//         }
+//     }, 50);
+// }
+
+// // ==================== CORE MASKING ====================
+// async function maskAndReplace(field, text) {
+//     if (!extensionEnabled) return;
+//     if (!text || !text.trim()) return;
+//     if (isAlreadyMasked(text)) { console.log("⏭️ Already masked."); return; }
+//     if (text.length > MAX_TEXT_LENGTH) {
+//         console.warn(`⚠️ Text too long (${text.length}), skipping.`);
+//         return;
+//     }
+//     if (isProcessing.get(field)) {
+//         console.log("⏳ Already processing, skipping.");
+//         return;
+//     }
+
+//     // Clear any pending replacement for this field before starting a fresh one
+//     if (pendingTimeouts.has(field)) {
+//         clearTimeout(pendingTimeouts.get(field));
+//         pendingTimeouts.delete(field);
+//     }
+
+//     const cursorSaved = saveCursorPosition(field);  // dom.js
+//     isProcessing.set(field, true);
+
+//     try {
+//         // sendToBackend defined in api.js – no arguments needed, uses globals
+//         const result = await sendToBackend(text);
+
+//         if (!result.success) {
+//             console.error("❌ Backend error:", result.error);
+//             return; // finally below resets isProcessing
+//         }
+
+//         const data = result.data;
+//         if (!data || typeof data !== 'object') {
+//             console.error("❌ Invalid data from backend:", data);
+//             return;
+//         }
+
+//         if (Array.isArray(data.entities) && data.entities.length > 0) {
+//             highlightField(field, data.entities);   // highlight.js
+//         }
+
+//         // Delay replacement so the yellow highlight is briefly visible first
+//         const tid = setTimeout(() => {
+//             try {
+//                 if (data.status === 'ok' && data.masked && data.masked !== text) {
+//                     isUpdating = true;
+//                     setFieldText(field, data.masked);                    // dom.js
+//                     restoreCursorPosition(field, cursorSaved, data.masked); // dom.js
+//                     isUpdating = false;
+//                     lastSentText.set(field, data.masked);
+//                 } else {
+//                     lastSentText.set(field, data.masked || text);
+//                 }
+//             } catch (e) {
+//                 console.error("❌ Replacement error:", e);
+//                 isUpdating = false; // always clear the flag even if setFieldText throws
+//             } finally {
+//                 isProcessing.set(field, false);
+//                 pendingTimeouts.delete(field);
+//             }
+//         }, HIGHLIGHT_DURATION);
+
+//         pendingTimeouts.set(field, tid);
+
+//     } catch (e) {
+//         console.error("❌ Fatal maskAndReplace error:", e);
+//     } finally {
+//         // Release the processing lock only if the setTimeout hasn't taken ownership yet
+//         if (!pendingTimeouts.has(field)) {
+//             isProcessing.set(field, false);
+//         }
+//     }
+// }
+
+// // ==================== FIELD SELECTORS ====================
+// const FIELD_SELECTORS = [
+//     'input[type="text"]',  'input[type="search"]', 'input[type="tel"]',
+//     'input[type="url"]',   'input[type="email"]',  'input[type="password"]',
+//     'input[type="number"]','textarea',              '[contenteditable="true"]'
+// ];
+
+// // ==================== MUTATION OBSERVER ====================
+// let observerTimeout;
+// function handleMutations() {
+//     clearTimeout(observerTimeout);
+//     observerTimeout = setTimeout(() => {
+//         scanAndAttach(FIELD_SELECTORS, onInput, onPaste); // dom.js
+//     }, OBSERVER_DEBOUNCE);
+// }
+
+// function observeDynamicFields() {
+//     if (!document.body) return;
+//     new MutationObserver(handleMutations).observe(document.body, {
+//         childList: true,
+//         subtree:   true,
+//     });
+//     console.log("👁️ MutationObserver active");
+// }
+
+// // ==================== INITIALISATION ====================
+// function init() {
+//     injectHighlightStyles();                              // highlight.js
+//     scanAndAttach(FIELD_SELECTORS, onInput, onPaste);    // dom.js
+//     observeDynamicFields();
+//     checkBackendHealth(true);                             // api.js – eager first check
+//     setInterval(checkBackendHealth, HEALTH_CHECK_INTERVAL); // periodic pings
+//     console.log("🔒 PreSendAI initialised");
+// }
+
+// // Content scripts default to document_idle, but guard anyway
+// if (document.readyState === 'loading') {
+//     document.addEventListener('DOMContentLoaded', init);
+// } else {
+//     init();
+// }
+
+
+// day 24 final upadate
+// content.js – main logic (state, event handlers, initialisation)
+// Load order in manifest.json MUST be:
+//   1. dom.js
+//   2. highlight.js
+//   3. api.js
+//   4. content.js   ← this file
+
+// ==================== CROSS-BROWSER POLYFILL ====================
+// Normalise to a single `browserAPI` variable that works on:
+//   Chrome / Edge / Opera  → chrome.* APIs
+//   Firefox                → browser.* APIs (already Promise-based)
+//   Any other context      → null (extension APIs unavailable)
+const browserAPI = (() => {
+    if (typeof chrome !== 'undefined' && chrome.runtime) return chrome;
+    if (typeof browser !== 'undefined' && browser.runtime) return browser;
+    return null;
+})();
+
+const runtime = browserAPI ? browserAPI.runtime : null;
 if (!runtime) console.warn("⚠️ No extension runtime API found.");
 
-// ==================== STATE ====================
-let extensionEnabled = true;
-let backendHealthy   = null;   // null = unknown; true/false = verified
-let lastHealthCheck  = 0;
+// ==================== CONFIGURATION ====================
+// Single source of truth for ALL constants shared across modules.
+// dom.js, highlight.js, and api.js read these as globals — do NOT
+// re-declare any of these in those files.
+const BACKEND_URL           = "https://localhost:5000/scan";
+const HEALTH_URL            = "https://localhost:5000/health";
+const DEBOUNCE_DELAY        = 300;
+const OBSERVER_DEBOUNCE     = 300;
+const HIGHLIGHT_DURATION    = 300;   // also used by highlight.js
+const MESSAGE_TIMEOUT       = 10000;
+const MAX_TEXT_LENGTH       = 20000;
+const HEALTH_CHECK_INTERVAL = 30000;
+const HEALTH_CHECK_TIMEOUT  = 2000;
 
-if (runtime) {
-    browser.storage.local.get('enabled', (data) => {
+const MASK_PLACEHOLDERS = [
+    // Core
+    "[NAME]", "[EMAIL]", "[PHONE]", "[ID]", "[AADHAAR]", "[CARD]", "[ADDRESS]", "[ORG]",
+    // India-specific
+    "[PAN]", "[PASSPORT]", "[DRIVING_LICENCE]", "[PINCODE]", "[VEHICLE_REG]",
+    "[GST]", "[IFSC]", "[UPI]",
+    // General
+    "[DOB]", "[IP]", "[URL]", "[SALARY]", "[LOCATION]",
+    "[REDACTED]"
+];
+
+// ==================== SHARED STATE ====================
+// Intentional globals – dom.js (attachListener) reads trackedFields.
+let extensionEnabled  = true;
+const trackedFields   = new WeakSet();
+const lastSentText    = new WeakMap();
+const isProcessing    = new WeakMap();
+const pendingTimeouts = new WeakMap();
+let isUpdating = false;
+
+// ==================== ENABLED STATE FROM STORAGE ====================
+if (browserAPI) {
+    // browserAPI.storage works on both Chrome (chrome.storage) and Firefox (browser.storage)
+    browserAPI.storage.local.get('enabled', (data) => {
         extensionEnabled = data.enabled !== false;
         console.log(`Extension enabled: ${extensionEnabled}`);
     });
-    browser.storage.onChanged.addListener((changes, area) => {
+    browserAPI.storage.onChanged.addListener((changes, area) => {
         if (area === 'local' && changes.enabled) {
             extensionEnabled = changes.enabled.newValue !== false;
             console.log(`Extension enabled changed to: ${extensionEnabled}`);
@@ -9853,337 +10891,55 @@ if (runtime) {
     } catch (e) {
         console.warn("⚠️ Could not establish keep-alive port:", e);
     }
+    // Use runtime.lastError (not hardcoded chrome.runtime) – Firefox compatible
     setInterval(() => {
-        try { runtime.sendMessage({ action: "ping" }, () => { runtime.lastError; }); }
-        catch (e) { /* context invalidated */ }
+        try {
+            runtime.sendMessage({ action: "ping" }, () => { void runtime.lastError; });
+        } catch (_) { /* context invalidated – ignore */ }
     }, 20000);
 }
-
-// ==================== HEALTH CHECK ====================
-async function checkBackendHealth(force = false) {
-    if (!extensionEnabled) return backendHealthy;
-    const now = Date.now();
-    if (!force && now - lastHealthCheck < HEALTH_CHECK_INTERVAL) return backendHealthy;
-
-    lastHealthCheck = now;
-    try {
-        const controller = new AbortController();
-        const tid = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT);
-        const res = await fetch(HEALTH_URL, { method: 'GET', signal: controller.signal });
-        clearTimeout(tid);
-        backendHealthy = res.ok;
-        if (!res.ok) console.warn("⚠️ Backend health check non-OK:", res.status);
-    } catch (e) {
-        backendHealthy = false;
-        console.warn("⚠️ Backend unreachable:", e.message);
-    }
-    console.log(`Backend health: ${backendHealthy ? '🟢 healthy' : '🔴 unreachable'}`);
-    return backendHealthy;
-}
-
-// Run initial check eagerly; subsequent checks are interval-gated
-checkBackendHealth(true);
-
-// Periodic health check – only when extension is enabled
-let _healthInterval = null;
-function _startHealthInterval() {
-    if (_healthInterval) return;
-    _healthInterval = setInterval(checkBackendHealth, HEALTH_CHECK_INTERVAL);
-}
-function _stopHealthInterval() {
-    if (_healthInterval) { clearInterval(_healthInterval); _healthInterval = null; }
-}
-_startHealthInterval();
-
-// ==================== FIELD TRACKING ====================
-const trackedFields   = new WeakSet();
-const lastSentText    = new WeakMap();
-const isProcessing    = new WeakMap();
-const pendingTimeouts = new WeakMap();
-let isUpdating = false;
 
 // ==================== HELPERS ====================
 function isAlreadyMasked(text) {
     return MASK_PLACEHOLDERS.some(p => text.includes(p));
 }
 
-function isEditableField(el) {
-    if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
-    const tag = el.tagName.toLowerCase();
-    if (tag === 'input') {
-        const t = (el.type || 'text').toLowerCase();
-        return ['text','search','tel','url','email','password','number'].includes(t);
-    }
-    return tag === 'textarea' || el.isContentEditable;
-}
-
-function getFieldText(field) {
-    const tag = field.tagName.toLowerCase();
-    if (tag === 'input' || tag === 'textarea') return field.value || '';
-    if (field.isContentEditable) return field.innerText || '';
-    return '';
-}
-
-// ==================== SET FIELD TEXT ====================
-function setFieldText(field, newText) {
-    const tag = field.tagName.toLowerCase();
-    if (tag === 'input' || tag === 'textarea') {
-        field.value = newText;
-        field.dispatchEvent(new Event('input', { bubbles: true }));
-        return;
-    }
-    if (!field.isContentEditable) return;
-
-    try {
-        // Quill
-        const quill = field.__quill || field._quill
-            || field.closest?.('.ql-container')?.__quill
-            || field.closest?.('.ql-container')?._quill;
-        if (quill) { quill.setText(newText); return; }
-
-        // ProseMirror
-        const pm = field.classList?.contains('ProseMirror') || !!field.closest?.('.ProseMirror');
-        if (pm) {
-            const view = field._view || field.view
-                || field.parentElement?._view || field.parentElement?.view;
-            if (view) {
-                const { state } = view;
-                const tr = state.tr.replaceWith(0, state.doc.content.size, state.schema.text(newText));
-                view.dispatch(tr);
-                return;
-            }
-        }
-
-        // Generic contenteditable fallback – avoid spurious blur
-        field.innerText = newText;
-        field.dispatchEvent(new Event('input',  { bubbles: true }));
-        field.dispatchEvent(new Event('change', { bubbles: true }));
-    } catch (e) {
-        console.error("❌ setFieldText error:", e);
-        try {
-            field.innerText = newText;
-            field.dispatchEvent(new Event('input', { bubbles: true }));
-        } catch (_) { /* last resort */ }
-    }
-}
-
-// ==================== DEBOUNCE ====================
 function debounce(fn, wait) {
     let t;
-    return function(...args) { clearTimeout(t); t = setTimeout(() => fn(...args), wait); };
+    return function(...args) {
+        clearTimeout(t);
+        t = setTimeout(() => fn(...args), wait);
+    };
 }
 
-// ==================== CURSOR ====================
-function saveCursorPosition(field) {
-    const tag = field.tagName.toLowerCase();
-    if (tag === 'input' || tag === 'textarea') {
-        return { type: 'input', start: field.selectionStart, end: field.selectionEnd };
+// ==================== INPUT HANDLER ====================
+function onInput(event) {
+    if (!extensionEnabled || isUpdating) return;
+
+    // resolveEditableTarget defined in dom.js – handles ql-clipboard remapping
+    const field = resolveEditableTarget(event.target);
+    if (!field) return;
+
+    const currentText = getFieldText(field);
+    if (currentText === lastSentText.get(field)) return;
+
+    if (!field._debouncedMask) {
+        field._debouncedMask = debounce((f, t) => maskAndReplace(f, t), DEBOUNCE_DELAY);
     }
-    if (field.isContentEditable) {
-        const sel = window.getSelection();
-        if (!sel || sel.rangeCount === 0) return null;
-        const range = sel.getRangeAt(0);
-        if (!field.contains(range.startContainer)) return null;
-        const pre = range.cloneRange();
-        pre.selectNodeContents(field);
-        pre.setEnd(range.startContainer, range.startOffset);
-        return { type: 'contenteditable', offset: pre.toString().length };
-    }
-    return null;
+    field._debouncedMask(field, currentText);
 }
 
-function restoreCursorPosition(field, saved, newText) {
-    if (!saved) return;
-    const tag = field.tagName.toLowerCase();
-    try {
-        if (saved.type === 'input' && (tag === 'input' || tag === 'textarea')) {
-            const len = newText.length;
-            field.setSelectionRange(Math.min(saved.start, len), Math.min(saved.end, len));
-        } else if (saved.type === 'contenteditable' && field.isContentEditable) {
-            const offset  = Math.min(saved.offset, newText.length);
-            const textNode = field.firstChild;
-            if (textNode && textNode.nodeType === Node.TEXT_NODE) {
-                const range = document.createRange();
-                range.setStart(textNode, offset);
-                range.collapse(true);
-                const sel = window.getSelection();
-                if (sel) { sel.removeAllRanges(); sel.addRange(range); }
-            }
+// ==================== PASTE HANDLER ====================
+function onPaste(event) {
+    setTimeout(() => {
+        // Same ql-clipboard remapping as onInput – both now go through resolveEditableTarget
+        const field = resolveEditableTarget(event.target);
+        if (!field) return;
+        const currentText = getFieldText(field);
+        if (currentText && !isAlreadyMasked(currentText)) {
+            maskAndReplace(field, currentText);
         }
-    } catch (e) {
-        console.warn("⚠️ restoreCursorPosition failed:", e);
-    }
-}
-
-// ==================== HIGHLIGHT ====================
-function injectHighlightStyles() {
-    const id = 'presendai-highlight-styles';
-    if (document.getElementById(id)) return;
-    const style = document.createElement('style');
-    style.id = id;
-    style.textContent = `
-        .presendai-highlight {
-            background-color: #fff2b0 !important;
-            color: #000 !important;
-            border-radius: 4px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            transition: background-color 0.2s, box-shadow 0.2s;
-            padding: 0 2px;
-            margin: 0 -2px;
-        }
-        .presendai-flash { animation: presendai-flash-bg 0.6s ease; }
-        @keyframes presendai-flash-bg {
-            0%   { background-color: inherit; }
-            50%  { background-color: #fff2b0; }
-            100% { background-color: inherit; }
-        }
-    `;
-    document.head.appendChild(style);
-}
-
-function removeHighlights(field) {
-    if (!field.isContentEditable) return;
-    field.querySelectorAll('.presendai-highlight').forEach(span => {
-        const parent = span.parentNode;
-        if (parent) {
-            parent.replaceChild(document.createTextNode(span.textContent), span);
-            parent.normalize();
-        }
-    });
-}
-
-function highlightContentEditablePlain(field, entities) {
-    if (/<[^>]*>/.test(field.innerHTML) &&
-        !field.innerHTML.includes('<span class="presendai-highlight">')) {
-        return false;
-    }
-    removeHighlights(field);
-
-    const walker = document.createTreeWalker(field, NodeFilter.SHOW_TEXT, null, false);
-    const textNodes = [];
-    let node;
-    while ((node = walker.nextNode())) textNodes.push(node);
-
-    let pos = 0;
-    const nodeMap = textNodes.map(n => {
-        const start = pos;
-        pos += n.nodeValue.length;
-        return { node: n, start, end: pos };
-    });
-
-    const sorted = [...entities].sort((a, b) => b.start - a.start);
-    for (const ent of sorted) {
-        for (const item of nodeMap) {
-            if (ent.start >= item.end || ent.end <= item.start) continue;
-            const oStart = Math.max(ent.start, item.start);
-            const oEnd   = Math.min(ent.end,   item.end);
-            if (oStart >= oEnd) continue;
-
-            const text   = item.node.nodeValue;
-            const before = text.substring(0, oStart - item.start);
-            const middle = text.substring(oStart - item.start, oEnd - item.start);
-            const after  = text.substring(oEnd - item.start);
-
-            const span = document.createElement('span');
-            span.className = 'presendai-highlight';
-            span.textContent = middle;
-
-            const frag = document.createDocumentFragment();
-            if (before) frag.appendChild(document.createTextNode(before));
-            frag.appendChild(span);
-            if (after)  frag.appendChild(document.createTextNode(after));
-
-            item.node.parentNode.replaceChild(frag, item.node);
-            break;
-        }
-    }
-    return true;
-}
-
-function highlightFieldFlash(field) {
-    field.classList.add('presendai-flash');
-    setTimeout(() => field.classList.remove('presendai-flash'), HIGHLIGHT_DURATION);
-    field.style.backgroundColor = '#fff2b0';
-    setTimeout(() => field.style.backgroundColor = '', HIGHLIGHT_DURATION);
-}
-
-function highlightField(field, entities) {
-    if (!entities || entities.length === 0) return;
-    try {
-        if (field.isContentEditable) {
-            if (!highlightContentEditablePlain(field, entities)) highlightFieldFlash(field);
-        } else {
-            highlightFieldFlash(field);
-        }
-    } catch (e) {
-        console.error("❌ Highlight error, falling back to flash:", e);
-        highlightFieldFlash(field);
-    }
-}
-
-// ==================== BACKEND COMMUNICATION ====================
-async function sendToBackend(text) {
-    // If health is still unknown (very first call before first check completes), try anyway.
-    if (backendHealthy === false) {
-        // Attempt a re-check if the cache window has expired
-        const healthy = await checkBackendHealth();
-        if (!healthy) {
-            console.log("⏸️ Backend unhealthy, skipping.");
-            return { success: false, error: "Backend unreachable" };
-        }
-    }
-
-    // --- Try runtime message (background.js relay) ---
-    if (runtime) {
-        try {
-            if (!runtime.id) throw new Error("Extension context invalidated");
-
-            const result = await Promise.race([
-                new Promise((resolve, reject) => {
-                    runtime.sendMessage({ action: "maskText", text, url: BACKEND_URL }, (response) => {
-                        // Use runtime.lastError (not hardcoded chrome.runtime.lastError) for Firefox compat
-                        const err = runtime.lastError;
-                        if (err) reject(new Error(err.message));
-                        else if (!response) reject(new Error("Empty response from background"));
-                        else resolve(response);
-                    });
-                }),
-                new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error("Runtime message timeout")), MESSAGE_TIMEOUT)
-                )
-            ]);
-            // background.js sends { success, data } or { success: false, error }
-            if (!result.success) return { success: false, error: result.error || "Background reported failure" };
-            return { success: true, data: result.data };
-        } catch (e) {
-            console.warn("⚠️ Runtime messaging failed, falling back to fetch:", e.message);
-        }
-    }
-
-    // --- Direct fetch fallback ---
-    try {
-        const controller = new AbortController();
-        const tid = setTimeout(() => controller.abort(), MESSAGE_TIMEOUT);
-        const res = await fetch(BACKEND_URL, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ text }),
-            signal:  controller.signal,
-        });
-        clearTimeout(tid);
-        if (!res.ok) {
-            const body = await res.text().catch(() => '');
-            throw new Error(`HTTP ${res.status}: ${body}`);
-        }
-        const data = await res.json();
-        backendHealthy = true;
-        return { success: true, data };
-    } catch (e) {
-        backendHealthy = false;
-        lastHealthCheck = Date.now(); // throttle re-check
-        console.error("❌ Direct fetch failed:", e.message);
-        return { success: false, error: e.message };
-    }
+    }, 50);
 }
 
 // ==================== CORE MASKING ====================
@@ -10200,16 +10956,17 @@ async function maskAndReplace(field, text) {
         return;
     }
 
-    // Clear any pending replacement timeout for this field
+    // Clear any pending replacement for this field before starting a fresh one
     if (pendingTimeouts.has(field)) {
         clearTimeout(pendingTimeouts.get(field));
         pendingTimeouts.delete(field);
     }
 
-    const cursorSaved = saveCursorPosition(field);
+    const cursorSaved = saveCursorPosition(field);  // dom.js
     isProcessing.set(field, true);
 
     try {
+        // sendToBackend defined in api.js – no arguments needed, uses globals
         const result = await sendToBackend(text);
 
         if (!result.success) {
@@ -10224,16 +10981,16 @@ async function maskAndReplace(field, text) {
         }
 
         if (Array.isArray(data.entities) && data.entities.length > 0) {
-            highlightField(field, data.entities);
+            highlightField(field, data.entities);   // highlight.js
         }
 
-        // Delay the text replacement to let highlight be visible briefly
+        // Delay replacement so the yellow highlight is briefly visible first
         const tid = setTimeout(() => {
             try {
                 if (data.status === 'ok' && data.masked && data.masked !== text) {
                     isUpdating = true;
-                    setFieldText(field, data.masked);
-                    restoreCursorPosition(field, cursorSaved, data.masked);
+                    setFieldText(field, data.masked);                    // dom.js
+                    restoreCursorPosition(field, cursorSaved, data.masked); // dom.js
                     isUpdating = false;
                     lastSentText.set(field, data.masked);
                 } else {
@@ -10241,7 +10998,7 @@ async function maskAndReplace(field, text) {
                 }
             } catch (e) {
                 console.error("❌ Replacement error:", e);
-                isUpdating = false; // ensure flag is cleared if setFieldText throws
+                isUpdating = false; // always clear the flag even if setFieldText throws
             } finally {
                 isProcessing.set(field, false);
                 pendingTimeouts.delete(field);
@@ -10253,87 +11010,51 @@ async function maskAndReplace(field, text) {
     } catch (e) {
         console.error("❌ Fatal maskAndReplace error:", e);
     } finally {
-        // Always release the processing lock if we didn't hand it off to the setTimeout
+        // Release the processing lock only if the setTimeout hasn't taken ownership yet
         if (!pendingTimeouts.has(field)) {
             isProcessing.set(field, false);
         }
     }
 }
 
-// ==================== QUILL CLIPBOARD HELPER ====================
-function resolveField(target) {
-    if (target.classList && target.classList.contains('ql-clipboard')) {
-        const editor = target.closest?.('.ql-container')?.querySelector('.ql-editor');
-        if (editor) return editor;
-        return null; // can't resolve – skip
-    }
-    return target;
-}
-
-// ==================== INPUT & PASTE HANDLERS ====================
-function onInput(event) {
-    if (!extensionEnabled || isUpdating) return;
-
-    const field = resolveField(event.target);
-    if (!field) return;
-
-    const currentText = getFieldText(field);
-    if (currentText === lastSentText.get(field)) return;
-
-    if (!field._debouncedMask) {
-        field._debouncedMask = debounce((f, t) => maskAndReplace(f, t), DEBOUNCE_DELAY);
-    }
-    field._debouncedMask(field, currentText);
-}
-
-function onPaste(event) {
-    // Wait for the DOM to reflect the pasted content
-    setTimeout(() => {
-        // Mirror the same ql-clipboard remapping as onInput
-        const field = resolveField(event.target);
-        if (!field) return;
-        const currentText = getFieldText(field);
-        if (currentText && !isAlreadyMasked(currentText)) {
-            maskAndReplace(field, currentText);
-        }
-    }, 50);
-}
-
-// ==================== ATTACH LISTENERS ====================
-function attachListener(field) {
-    if (!trackedFields.has(field) && isEditableField(field)) {
-        field.addEventListener('input', onInput);
-        field.addEventListener('paste', onPaste);
-        trackedFields.add(field);
-    }
-}
-
-function scanAndAttach() {
-    const sel = [
-        'input[type="text"]','input[type="search"]','input[type="tel"]',
-        'input[type="url"]','input[type="email"]','input[type="password"]',
-        'input[type="number"]','textarea','[contenteditable="true"]'
-    ].join(',');
-    document.querySelectorAll(sel).forEach(attachListener);
-}
+// ==================== FIELD SELECTORS ====================
+const FIELD_SELECTORS = [
+    'input[type="text"]',  'input[type="search"]', 'input[type="tel"]',
+    'input[type="url"]',   'input[type="email"]',  'input[type="password"]',
+    'input[type="number"]','textarea',              '[contenteditable="true"]'
+];
 
 // ==================== MUTATION OBSERVER ====================
 let observerTimeout;
 function handleMutations() {
     clearTimeout(observerTimeout);
-    observerTimeout = setTimeout(() => { scanAndAttach(); }, OBSERVER_DEBOUNCE);
+    observerTimeout = setTimeout(() => {
+        scanAndAttach(FIELD_SELECTORS, onInput, onPaste); // dom.js
+    }, OBSERVER_DEBOUNCE);
 }
 
 function observeDynamicFields() {
     if (!document.body) return;
-    new MutationObserver(handleMutations).observe(document.body, { childList: true, subtree: true });
+    new MutationObserver(handleMutations).observe(document.body, {
+        childList: true,
+        subtree:   true,
+    });
+    console.log("👁️ MutationObserver active");
 }
 
-// ==================== INIT ====================
-injectHighlightStyles();
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => { scanAndAttach(); observeDynamicFields(); });
-} else {
-    scanAndAttach();
+// ==================== INITIALISATION ====================
+function init() {
+    injectHighlightStyles();                              // highlight.js
+    scanAndAttach(FIELD_SELECTORS, onInput, onPaste);    // dom.js
     observeDynamicFields();
+    checkBackendHealth(true);                             // api.js – eager first check
+    setInterval(checkBackendHealth, HEALTH_CHECK_INTERVAL); // periodic pings
+    console.log("🔒 PreSendAI initialised");
+}
+
+// Content scripts default to document_idle, but guard anyway
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+} else {
+    init();
 }
