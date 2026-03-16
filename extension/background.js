@@ -542,9 +542,14 @@
 // });
 
 // day 23 claude 
-if (typeof browser === 'undefined' && typeof chrome !== 'undefined') {
-    var browser = chrome;
-}
+// if (typeof browser === 'undefined' && typeof chrome !== 'undefined') {
+//     var browser = chrome;
+// }
+const browser = (() => {
+    if (typeof chrome !== 'undefined' && chrome.runtime) return chrome;
+    if (typeof browser !== 'undefined' && browser.runtime) return browser;
+    return null;
+})();
 console.log("🔧 PreSendAI background worker started");
 
 // ==================== KEEP-ALIVE PORTS ====================
@@ -578,7 +583,7 @@ browser.alarms.onAlarm.addListener((alarm) => {
 // ==================== MESSAGE HANDLER ====================
 browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Validate sender — only accept messages from our own extension tabs/frames
-    if (sender.id && sender.id !== browser.runtime.id) {
+    if (sender.extensionId && sender.extensionId !== browser.runtime.id) {
         console.warn("⚠️ Message from unexpected sender:", sender.id);
         return false;
     }
@@ -586,7 +591,7 @@ browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "ping") {
         // Keep-alive – no response needed
         return false;
-    }
+    }   
 
     if (request.action === "maskText") {
         const { text, url } = request;
@@ -596,10 +601,15 @@ browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
             sendResponse({ success: false, error: "Empty or invalid text payload" });
             return false;
         }
-        if (typeof url !== 'string' || !url.startsWith('https://')) {
-            sendResponse({ success: false, error: "Invalid or non-HTTPS backend URL" });
-            return false;
-        }
+        // if (typeof url !== 'string' || !url.startsWith('https://')) {
+        //     sendResponse({ success: false, error: "Invalid or non-HTTPS backend URL" });
+        //     return false;
+        // }
+        const isValidUrl = typeof url === 'string' && url.startsWith('https://');
+        if (!isValidUrl) {
+        sendResponse({ success: false, error: "Invalid or non-HTTPS backend URL" });
+        return false;
+}
 
         console.log("Background: relaying text to backend (first 100 chars):",
             text.substring(0, 100) + (text.length > 100 ? "…" : ""));

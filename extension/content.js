@@ -11048,7 +11048,8 @@ function init() {
     scanAndAttach(FIELD_SELECTORS, onInput, onPaste);    // dom.js
     observeDynamicFields();
     checkBackendHealth(true);                             // api.js – eager first check
-    setInterval(checkBackendHealth, HEALTH_CHECK_INTERVAL); // periodic pings
+    // setInterval(checkBackendHealth, HEALTH_CHECK_INTERVAL); // periodic pings
+    setInterval(() => checkBackendHealth(), HEALTH_CHECK_INTERVAL);
     console.log("🔒 PreSendAI initialised");
 }
 
