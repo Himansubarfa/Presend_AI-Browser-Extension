@@ -19,10 +19,8 @@
   "host_permissions": [
     "https://localhost:5000/*",
     "https://chat.openai.com/*",
-    "https://gemini.google.com/*",
-    "https://mail.google.com/*",
-    "https://docs.google.com/*",
-    "https://drive.google.com/*",
+    "https://chatgpt.com/*",
+    "https://*.google.com/*",
     "https://www.deepseek.com/*",
     "https://chat.deepseek.com/*"
   ],
@@ -31,10 +29,8 @@
     {
       "matches": [
         "https://chat.openai.com/*",
-        "https://gemini.google.com/*",
-        "https://mail.google.com/*",
-        "https://docs.google.com/*",
-        "https://drive.google.com/*",
+        "https://chatgpt.com/*",
+        "https://*.google.com/*",
         "https://www.deepseek.com/*",
         "https://chat.deepseek.com/*"
       ],

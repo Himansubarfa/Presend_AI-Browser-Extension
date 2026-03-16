@@ -951,22 +951,201 @@
 #     return None
 
 
-# day 24 final update 
-"""
-masker.py – Replace detected entity spans with placeholder tokens.
+# # day 24 final update 
+# """
+# masker.py – Replace detected entity spans with placeholder tokens.
 
-Contract:
-  - `text`     : the SAME string that was passed to detect_entities()
-  - `entities` : output of detect_entities() (already deduplicated & overlap-resolved)
+# Contract:
+#   - `text`     : the SAME string that was passed to detect_entities()
+#   - `entities` : output of detect_entities() (already deduplicated & overlap-resolved)
 
-Guarantees:
-  - Replacement is end-to-start so indices never shift mid-loop.
-  - Overlapping / nested spans are skipped with a warning (should not occur
-    after resolve_overlaps, but handled defensively).
-  - All errors are surfaced as ValueError (bad input) or logged and recovered
-    from (unexpected runtime issues), never silently swallowed.
-"""
+# Guarantees:
+#   - Replacement is end-to-start so indices never shift mid-loop.
+#   - Overlapping / nested spans are skipped with a warning (should not occur
+#     after resolve_overlaps, but handled defensively).
+#   - All errors are surfaced as ValueError (bad input) or logged and recovered
+#     from (unexpected runtime issues), never silently swallowed.
+# """
 
+# from __future__ import annotations
+
+# import logging
+# from typing import Any, Dict, List, Optional
+
+# logger = logging.getLogger(__name__)
+
+# # ---------------------------------------------------------------------------
+# # Label → placeholder mapping
+# # ---------------------------------------------------------------------------
+# MASK_LABELS: Dict[str, str] = {
+#     # Core
+#     "PERSON":           "[NAME]",
+#     "EMAIL":            "[EMAIL]",
+#     "PHONE":            "[PHONE]",
+#     "ID":               "[ID]",
+#     "AADHAAR":          "[AADHAAR]",
+#     "CARD":             "[CARD]",
+#     "ADDRESS":          "[ADDRESS]",
+#     "ORG":              "[ORG]",
+#     # India-specific
+#     "PAN":              "[PAN]",
+#     "PASSPORT":         "[PASSPORT]",
+#     "DRIVING_LICENCE":  "[DRIVING_LICENCE]",
+#     "PINCODE":          "[PINCODE]",
+#     "VEHICLE_REG":      "[VEHICLE_REG]",
+#     "GST":              "[GST]",
+#     "IFSC":             "[IFSC]",
+#     "UPI":              "[UPI]",
+#     # General
+#     "DOB":              "[DOB]",
+#     "IP":               "[IP]",
+#     "URL":              "[URL]",
+#     "SALARY":           "[SALARY]",
+#     "LOCATION":         "[LOCATION]",
+# }
+
+# DEFAULT_MASK = "[REDACTED]"
+
+
+# # ---------------------------------------------------------------------------
+# # Public API
+# # ---------------------------------------------------------------------------
+
+# def mask_text(
+#     text: str,
+#     entities: List[Dict[str, Any]],
+#     *,
+#     strict: bool = False,
+# ) -> str:
+#     """
+#     Replace entity spans in *text* with mask placeholders.
+
+#     Parameters
+#     ----------
+#     text:
+#         Original text — must be the identical object (or equal string) that
+#         was fed to the detector so that span indices align.
+#     entities:
+#         List of dicts with at minimum the keys ``label``, ``start``, ``end``.
+#         Additional keys (e.g. ``text``) are ignored.
+#     strict:
+#         If True, raise ValueError on any validation failure.
+#         If False (default), log a warning and skip the offending entity so
+#         the rest of the text is still processed.
+
+#     Returns
+#     -------
+#     str
+#         Text with every valid entity span replaced by its placeholder.
+#         Returns the original *text* unchanged if *entities* is empty or None.
+#     """
+#     # --- type coercion ---
+#     if text is None:
+#         return ""
+#     if not isinstance(text, str):
+#         logger.warning("mask_text: non-str text argument coerced (%s).", type(text).__name__)
+#         text = str(text)
+
+#     if not entities:
+#         return text
+
+#     text_len = len(text)
+
+#     # --- validate all entities up-front ---
+#     valid_entities: List[Dict[str, Any]] = []
+#     for idx, ent in enumerate(entities):
+#         err = _validate_entity(ent, idx, text_len)
+#         if err:
+#             if strict:
+#                 raise ValueError(err)
+#             logger.warning("mask_text: skipping entity[%d] – %s", idx, err)
+#             continue
+#         valid_entities.append(ent)
+
+#     if not valid_entities:
+#         return text
+
+#     # --- sort end-to-start to avoid index shifts ---
+#     # Secondary sort: for equal starts, put the *longer* span first (higher end) so it
+#     # takes precedence over a nested shorter span.
+#     sorted_entities = sorted(
+#         valid_entities,
+#         key=lambda e: (e["start"], -(e["end"] - e["start"])),
+#         reverse=True,
+#     )
+
+#     masked      = text
+#     last_start  = len(masked)           # tracks the boundary of the last replaced region
+
+#     for ent in sorted_entities:
+#         start       = ent["start"]
+#         end         = ent["end"]
+#         label       = ent["label"]
+#         replacement = MASK_LABELS.get(label, DEFAULT_MASK)
+
+#         # Guard: skip spans that overlap with a replacement we've already applied
+#         # (shouldn't occur after resolve_overlaps, but defensive)
+#         if end > last_start:
+#             logger.warning(
+#                 "mask_text: skipping overlapping span '%s' [%d:%d] (already replaced region starts at %d).",
+#                 label, start, end, last_start,
+#             )
+#             continue
+
+#         # Guard: skip if the span already IS the placeholder (double-masking prevention)
+#         if masked[start:end] == replacement:
+#             logger.debug("mask_text: span [%d:%d] already holds placeholder, skipping.", start, end)
+#             last_start = start
+#             continue
+
+#         masked     = masked[:start] + replacement + masked[end:]
+#         last_start = start
+
+#     return masked
+
+
+# # ---------------------------------------------------------------------------
+# # Private helpers
+# # ---------------------------------------------------------------------------
+
+# def _validate_entity(
+#     ent: Any,
+#     idx: int,
+#     text_len: int,
+# ) -> Optional[str]:
+#     """
+#     Return an error string if *ent* is invalid, else None.
+#     Does NOT raise — caller decides what to do with the error.
+#     """
+#     if not isinstance(ent, dict):
+#         return f"not a dict (got {type(ent).__name__})"
+
+#     missing = {"label", "start", "end"} - ent.keys()
+#     if missing:
+#         return f"missing required keys: {missing}"
+
+#     start = ent["start"]
+#     end   = ent["end"]
+
+#     if not isinstance(start, int) or not isinstance(end, int):
+#         return f"start/end must be int, got ({type(start).__name__}, {type(end).__name__})"
+
+#     if start < 0:
+#         return f"start ({start}) is negative"
+
+#     if end > text_len:
+#         return (
+#             f"end ({end}) exceeds text length ({text_len}); "
+#             "ensure entities were generated from the same (possibly truncated) text"
+#         )
+
+#     if start >= end:
+#         return f"invalid span: start ({start}) >= end ({end})"
+
+#     return None
+
+
+# day 26 final update 
 from __future__ import annotations
 
 import logging
@@ -1002,6 +1181,9 @@ MASK_LABELS: Dict[str, str] = {
     "URL":              "[URL]",
     "SALARY":           "[SALARY]",
     "LOCATION":         "[LOCATION]",
+    # NEW – credentials
+    "API_KEY":          "[API_KEY]",
+    "PASSWORD":         "[PASSWORD]",
 }
 
 DEFAULT_MASK = "[REDACTED]"
@@ -1066,8 +1248,6 @@ def mask_text(
         return text
 
     # --- sort end-to-start to avoid index shifts ---
-    # Secondary sort: for equal starts, put the *longer* span first (higher end) so it
-    # takes precedence over a nested shorter span.
     sorted_entities = sorted(
         valid_entities,
         key=lambda e: (e["start"], -(e["end"] - e["start"])),
@@ -1075,7 +1255,7 @@ def mask_text(
     )
 
     masked      = text
-    last_start  = len(masked)           # tracks the boundary of the last replaced region
+    last_start  = len(masked)
 
     for ent in sorted_entities:
         start       = ent["start"]
@@ -1083,8 +1263,6 @@ def mask_text(
         label       = ent["label"]
         replacement = MASK_LABELS.get(label, DEFAULT_MASK)
 
-        # Guard: skip spans that overlap with a replacement we've already applied
-        # (shouldn't occur after resolve_overlaps, but defensive)
         if end > last_start:
             logger.warning(
                 "mask_text: skipping overlapping span '%s' [%d:%d] (already replaced region starts at %d).",
@@ -1092,7 +1270,6 @@ def mask_text(
             )
             continue
 
-        # Guard: skip if the span already IS the placeholder (double-masking prevention)
         if masked[start:end] == replacement:
             logger.debug("mask_text: span [%d:%d] already holds placeholder, skipping.", start, end)
             last_start = start
@@ -1115,7 +1292,6 @@ def _validate_entity(
 ) -> Optional[str]:
     """
     Return an error string if *ent* is invalid, else None.
-    Does NOT raise — caller decides what to do with the error.
     """
     if not isinstance(ent, dict):
         return f"not a dict (got {type(ent).__name__})"
@@ -1142,4 +1318,4 @@ def _validate_entity(
     if start >= end:
         return f"invalid span: start ({start}) >= end ({end})"
 
-    return None
+    return None 
