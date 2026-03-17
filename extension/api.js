@@ -5,6 +5,7 @@
 // Chrome / Edge / Opera / Brave → browserAPI = chrome  (resolved in content.js)
 // Firefox                       → browserAPI = browser (resolved in content.js)
 //
+
 // Brave-specific note:
 //   Brave Shields can block page-context fetch() to localhost.
 //   PATH 1 (background relay) runs in the extension service-worker and is
@@ -50,6 +51,7 @@ async function checkBackendHealth(force = false) {
     console.log(`Backend: ${backendHealthy ? '🟢 healthy' : '🔴 unreachable'}`);
     return backendHealthy;
 }
+
 
 // ==================== SEND TO BACKEND ====================
 async function sendToBackend(text) {

@@ -643,3 +643,5 @@ browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ success: false, error: `Unknown action: ${request.action}` });
     return false;
 });
+
+
