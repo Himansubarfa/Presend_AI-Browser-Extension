@@ -38,7 +38,8 @@
         "https://chatgpt.com/*",
         "https://*.google.com/*",
         "https://www.deepseek.com/*",
-        "https://chat.deepseek.com/*"
+        "https://chat.deepseek.com/*",  
+        "http://localhost/*"
       ],
       "js": [
         "dom.js",
