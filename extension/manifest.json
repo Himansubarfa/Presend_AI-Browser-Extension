@@ -28,7 +28,8 @@
     "https://chatgpt.com/*",
     "https://*.google.com/*",
     "https://www.deepseek.com/*",
-    "https://chat.deepseek.com/*"
+    "https://chat.deepseek.com/*",
+    "https://calude.ai/*"
   ],
 
   "content_scripts": [
@@ -39,7 +40,8 @@
         "https://*.google.com/*",
         "https://www.deepseek.com/*",
         "https://chat.deepseek.com/*",  
-        "http://localhost/*"
+        "http://localhost/*",
+        "https://claude.ai/*"
       ],
       "js": [
         "dom.js",
