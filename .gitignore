@@ -10,9 +10,11 @@ __pycache__/
 .DS_Store
 
 # Development run file 
- run.py
+ /benchmark.py
 
- **/benchmark.py
+# Specific Python files to ignore
+detector1.py
+test_spacy.py
 
 # Local SSL Certificates
 localhost-key.pem
