@@ -19,3 +19,7 @@ test_spacy.py
 # Local SSL Certificates
 localhost-key.pem
 localhost.pem
+
+# extra files
+PreSendAI_Complete_Setup_Guide.docx
+PreSendAI_Complete_Setup_Guide.pdf
