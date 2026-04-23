@@ -1,0 +1,1 @@
+from backend.validators import validate_aadhaar

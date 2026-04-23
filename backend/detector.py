@@ -2620,7 +2620,7 @@ def _detect_with_presidio(text: str) -> List[Dict[str, Any]]:
         response = requests.post(
             url,
             json={"text": text, "language": "en"},
-            timeout=2.0,
+            timeout=0.5,
         )
         if response.status_code != 200:
             logger.warning("Presidio returned HTTP %d: %s", response.status_code, response.text[:200])
