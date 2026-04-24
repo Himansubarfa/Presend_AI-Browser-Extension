@@ -23,3 +23,8 @@ localhost.pem
 # extra files
 PreSendAI_Complete_Setup_Guide.docx
 PreSendAI_Complete_Setup_Guide.pdf
+
+# Ignore the model weights and checkpoints
+fine-tuned-ner-model/
+ner_model_output/
+checkpoint-*/
