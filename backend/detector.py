@@ -1974,6 +1974,8 @@ import unicodedata
 from typing import Any, Dict, List, Optional
 
 import requests
+from transformers import pipeline
+import os
 
 from .config import Config
 
@@ -2009,6 +2011,7 @@ def _get_spacy_model() -> Optional[Any]:
 # Priority map  (higher = wins overlap resolution)
 # ---------------------------------------------------------------------------
 PRIORITY_MAP: Dict[str, int] = {
+    # Structured — regex wins
     "EMAIL":            7,
     "PHONE":            6,
     "CARD":             5,
@@ -2024,15 +2027,38 @@ PRIORITY_MAP: Dict[str, int] = {
     "VEHICLE_REG":      4,
     "IP":               4,
     "URL":              4,
-    "POSTCODE":         3,  # NEW (replaces India-only PINCODE in priority)
-    "ADDRESS":          3,
-    "PINCODE":          3,  # kept for backward compat with existing masker labels
-    "DOB":              3,
-    "SALARY":           3,
+    "POSTCODE":         4,
+    "PINCODE":          4,
+    "DOB":              4,
+    "SALARY":           4,
     "ID":               2,
-    "ORG":              1,
-    "PERSON":           1,
-    "LOCATION":         1,
+    # Free-text — transformer wins
+    "ADDRESS":          5,
+    "ORG":              5,
+    "PERSON":           5,
+    "LOCATION":         5,
+    # Transformer structured — lower than regex
+    "EMAIL_TRANS":      4,
+    "PHONE_TRANS":      4,
+    "AADHAAR_TRANS":    4,
+    "PAN_TRANS":        4,
+    "PASSPORT_TRANS":   4,
+    "DRIVING_LICENCE_TRANS": 4,
+    "GST_TRANS":        4,
+    "IFSC_TRANS":       4,
+    "UPI_TRANS":        4,
+    "CARD_TRANS":       4,
+    "VEHICLE_REG_TRANS":3,
+    "IP_TRANS":         3,
+    "URL_TRANS":        3,
+    "DOB_TRANS":        3,
+    "SALARY_TRANS":     3,
+    "ID_TRANS":         2,
+    "API_KEY_TRANS":    4,
+    "PASSWORD_TRANS":   4,
+    "PINCODE_TRANS":    3,
+    "POSTCODE_TRANS":   3,
+    "ADDRESS_TRANS":    4,
 }
 
 # ---------------------------------------------------------------------------
@@ -2851,7 +2877,54 @@ def _detect_passwords(text: str) -> List[Dict[str, Any]]:
     for m in _PASSWORD_RE.finditer(text):
         result.append({"label": "PASSWORD", "text": m.group(), "start": m.start(), "end": m.end()})
     return result
+# ---------------------------------------------------------------------------
+# Transformer NER pipeline (fine‑tuned model)
+# ---------------------------------------------------------------------------
+_transformer_pipe = None
 
+def _load_transformer_pipeline():
+    """Load the fine‑tuned NER model once and cache it."""
+    global _transformer_pipe
+    if _transformer_pipe is None:
+        model_dir = os.path.join(os.path.dirname(__file__), "..", "fine-tuned-ner-model")
+        logger.info("Loading fine-tuned NER model from %s", model_dir)
+        _transformer_pipe = pipeline(
+            "token-classification",
+            model=model_dir,
+            tokenizer=model_dir,
+            aggregation_strategy="simple",
+            device=-1  # CPU
+        )
+        logger.info("NER model loaded.")
+    return _transformer_pipe
+
+def _detect_with_transformer(text: str) -> List[Dict[str, Any]]:
+    """Run the fine‑tuned transformer and return entity spans."""
+    try:
+        pipe = _load_transformer_pipeline()
+        results = pipe(text)
+        entities = []
+        for r in results:
+            label = r["entity_group"]
+            if label in ("O",):
+                continue
+            start = r["start"]
+            end = r["end"]
+            span_text = text[start:end]
+            # Basic validation: EMAIL must contain '@'
+            if label == "EMAIL" and "@" not in span_text:
+                continue
+            entities.append({
+                "label": label,
+                "text": span_text,
+                "start": start,
+                "end": end,
+                "score": float(r["score"])
+            })
+        return entities
+    except Exception:
+        logger.exception("Transformer detection failed.")
+        return []
 
 # ---------------------------------------------------------------------------
 # Public spaCy wrapper
@@ -2966,7 +3039,34 @@ def _validate_entities(entities: List[Dict[str, Any]]) -> None:
             raise ValueError(f"Entity[{idx}] start/end must be int: {ent!r}")
         if ent["start"] < 0 or ent["end"] <= ent["start"]:
             raise ValueError(f"Entity[{idx}] invalid span [{ent['start']}, {ent['end']}): {ent!r}")
+        
+def _validate_entity(ent: Dict[str, Any], text: str) -> bool:
+    """Reject clearly invalid detected entities."""
+    label = ent["label"]
+    # Strip _TRANS suffix for validation
+    if label.endswith("_TRANS"):
+        label = label[:-6]
+    span = text[ent["start"]:ent["end"]]
+    
+    if label == "EMAIL" and "@" not in span:
+        return False
+    if label == "AADHAAR":
+        digits = re.sub(r"\D", "", span)
+        if len(digits) != 12:
+            return False
+    if label == "PAN" and not re.fullmatch(r"[A-Z]{5}[0-9]{4}[A-Z]", span, re.IGNORECASE):
+        return False
+    if label == "PHONE":
+        digits = re.sub(r"\D", "", span)
+        if len(digits) < 7:
+            return False
+    if label == "PERSON":
+        # Reject single-word PERSON if not in the known name list
+        words = span.split()
+        if len(words) == 1 and span.lower() not in COMMON_NAMES:
+            return False
 
+    return True
 
 def resolve_overlaps(entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     if not entities:
@@ -3035,15 +3135,36 @@ def detect_entities(raw_text: Any) -> List[Dict[str, Any]]:
     presidio_spans = _detect_with_presidio(raw_text)
     spacy_spans    = detect_spacy_entities(raw_text)
     regex_spans    = detect_regex_entities(raw_text)
+    transformer_spans = _detect_with_transformer(raw_text)
 
-    all_spans = presidio_spans + spacy_spans + regex_spans
+    # Rename structured transformer labels to avoid conflict with regex priority
+    structured_labels = {
+        "EMAIL", "PHONE", "AADHAAR", "PAN", "PASSPORT", "DRIVING_LICENCE",
+        "GST", "IFSC", "UPI", "CARD", "VEHICLE_REG", "IP", "URL",
+        "DOB", "SALARY", "ID", "API_KEY", "PASSWORD", "PINCODE", "POSTCODE"
+    }
+    for ent in transformer_spans:
+        if ent["label"] in structured_labels:
+            ent["label"] = ent["label"] + "_TRANS"
+
+    all_spans = presidio_spans + spacy_spans + regex_spans + transformer_spans
     if not all_spans:
         return []
 
-    all_spans = deduplicate_spans(all_spans)
+        all_spans = deduplicate_spans(all_spans)
 
     try:
-        return resolve_overlaps(all_spans)
+        resolved = resolve_overlaps(all_spans)
     except ValueError:
         logger.exception("resolve_overlaps encountered invalid entities; returning deduplicated spans.")
-        return all_spans
+        resolved = all_spans
+
+    # Rename _TRANS labels back and validate
+    final = []
+    for ent in resolved:
+        if ent["label"].endswith("_TRANS"):
+            ent["label"] = ent["label"][:-6]
+        if _validate_entity(ent, raw_text):
+            final.append(ent)
+
+    return final

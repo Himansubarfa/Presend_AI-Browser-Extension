@@ -65,6 +65,22 @@ def evaluate(test_file: str):
         
         y_true_all.append(true_bio)
         y_pred_all.append(pred_bio)
+            # Filter to only labels present in ground truth
+        all_true_labels = set()
+        for bio in y_true_all:
+            for tag in bio:
+                if tag != 'O':
+                    all_true_labels.add(tag[2:])  # remove B- or I- prefix
+
+    # Keep only entity types that appear in ground truth
+        filtered_true, filtered_pred = [], []
+        for t, p in zip(y_true_all, y_pred_all):
+            ft = ['O' if tag == 'O' or tag[2:] not in all_true_labels else tag for tag in t]
+            fp = ['O' if tag == 'O' or tag[2:] not in all_true_labels else tag for tag in p]
+            filtered_true.append(ft)
+            filtered_pred.append(fp)
+
+        y_true_all, y_pred_all = filtered_true, filtered_pred
         
         if (idx + 1) % 100 == 0:
             print(f"Processed {idx+1} samples")
