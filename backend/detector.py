@@ -3103,6 +3103,30 @@ def resolve_overlaps(entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     logger.debug("resolve_overlaps: %d → %d entities", len(entities), len(resolved))
     return resolved
 
+def _add_fallback_addresses(text: str, entities: List[Dict]) -> List[Dict]:
+    """Add ADDRESS for lines that contain a digit and an Indian city name."""
+    city_pattern = r'(?i)\b(?:mumbai|delhi|bangalore|bengaluru|hyderabad|chennai|kolkata|pune|ahmedabad|jaipur|lucknow|surat|nagpur|indore|thane|bhopal|visakhapatnam|patna|vadodara|ghaziabad|ludhiana|agra|nashik|ranchi|faridabad|meerut|rajkot|varanasi|srinagar|aurangabad|dhanbad|amritsar|navi mumbai|allahabad|prayagraj|howrah|coimbatore|jabalpur|gwalior|vijayawada|jodhpur|madurai|raipur|kota|chandigarh|guwahati|thiruvananthapuram|solapur|hubli|dharwad|tiruchirappalli|mysore|mysuru|bareilly|aligarh|moradabad|jalandhar|bhubaneswar|salem|warangal|jamshedpur|noida|gurugram|gurgaon|kochi|ernakulam|dehradun|shimla|jammu|leh|panaji|goa|kolhapur|akola|latur|nanded|sangli|jalgaon|amravati)\b'
+    fallback = []
+    lines = text.split('\n')
+    pos = 0
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            pos += len(line) + 1
+            continue
+        if re.search(r'\d', stripped) and re.search(city_pattern, stripped):
+            start = text.index(stripped, pos)
+            end = start + len(stripped)
+            # avoid overlapping existing entities
+            overlap = False
+            for e in entities:
+                if e['start'] < end and e['end'] > start:
+                    overlap = True
+                    break
+            if not overlap:
+                fallback.append({'label': 'ADDRESS', 'start': start, 'end': end, 'text': stripped})
+        pos += len(line) + 1
+    return entities + fallback
 
 # ---------------------------------------------------------------------------
 # Main public entry point
@@ -3172,5 +3196,5 @@ def detect_entities(raw_text: Any) -> List[Dict[str, Any]]:
             ent["label"] = ent["label"][:-6]
         if _validate_entity(ent, raw_text):
             final.append(ent)
-
+    final = _add_fallback_addresses(raw_text, final)
     return final
