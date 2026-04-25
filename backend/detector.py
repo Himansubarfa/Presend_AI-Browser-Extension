@@ -2016,7 +2016,7 @@ PRIORITY_MAP: Dict[str, int] = {
     "PHONE":            6,
     "CARD":             5,
     "AADHAAR":          5,
-    "PAN":              5,
+    "PAN":              6,
     "PASSPORT":         5,
     "DRIVING_LICENCE":  5,
     "GST":              5,
@@ -2187,6 +2187,15 @@ COMMON_NAMES: frozenset[str] = frozenset({
     "jiyeon", "minjun", "seoyeon", "jisoo", "taehyung", "jimin", "sujin",
     # ── Extra ─────────────────────────────────────────────────────────────
     "jacky",
+})
+
+# Words that are commonly false-positive PERSON detections
+PERSON_FALSE_POSITIVES: frozenset[str] = frozenset({
+    "email", "phone", "address", "total", "version", "summary", "fax",
+    "mobile", "contact", "reference", "client", "customer", "patient",
+    "student", "teacher", "manager", "director", "officer", "mr", "mrs",
+    "ms", "miss", "dr", "prof", "shri", "smt", "sri",
+    "hello", "dear", "thanks", "regards", "sincerely",
 })
 
 # ---------------------------------------------------------------------------
@@ -2396,49 +2405,39 @@ _ID_RE = re.compile(r'(?<!\d)\d{9,15}(?!\d)')
 # ---------------------------------------------------------------------------
 _ADDRESS_SUFFIX_GLOBAL = (
     r'(?:'
-    # Unambiguous English road types (full words)
     r'road|street|avenue|boulevard|crescent|terrace|expressway|freeway|highway|'
     r'drive|lane|court|plaza|grove|gardens|'
-    # Safe short abbreviations (unambiguous in address context)
     r'rd|ave|blvd|cres|hwy|'
-    # Unit/building — full words only (abbreviations removed to reduce fp)
     r'apartment|building|apt|bldg|ste|'
-    # Indian (unambiguous — not ordinary English words)
     r'nagar|colony|sector|vihar|enclave|marg|chowk|bazaar|layout|puram|ganj|'
     r'wadi|katte|halli|palya|'
-    # German
-    r'strasse|allee|gasse|weg|platz|'
-    # French / Italian
-    r'rue|impasse|'
-    # Spanish / Portuguese
+    r'strasse|allee|gasse|weg|platz|rue|impasse|'
     r'carrera|avenida|paseo'
-    r')'   # NO trailing pipe — a trailing pipe makes the group match empty string
+    r')'
 )
 
 _ADDRESS_RE = re.compile(
     r'(?:'
-    # PAT1: Number-first WITH mandatory suffix (suffix no longer optional)
-    # e.g. 42 MG Road | 221B Baker Street | 123 Main Street
-    # Requiring suffix prevents "1500 units, total" and "App version 2.0.1" matching.
+    # PAT1: Number-first WITH mandatory suffix
     r'\b\d{1,5}[A-Za-z]?(?:[\-/]\d{1,4})?\s+[A-Za-z]{2,}(?:\s+[A-Za-z]{2,}){0,3}\s+' + _ADDRESS_SUFFIX_GLOBAL + r'\b'
     r'|'
-    # PAT2: Suffix-first (Indian: MG Road; German: Unter den Linden Allee)
-    # Suffix IS required — no empty-match risk because trailing pipe is removed.
+    # PAT2: Suffix-first
     r'\b[A-Za-z]{2,}(?:\s+[A-Za-z]{2,}){0,4}\s+' + _ADDRESS_SUFFIX_GLOBAL + r'\b(?:\s+\d{1,5})?'
     r'|'
-    # PAT3: Flat/Plot/House/Door/No. prefix (Indian apartment addressing)
-    # Keyword anchor prevents PAT1 re-matching the embedded digit as a separate span.
-    # {1,} not {2,}: allows single-char tokens like '1' in 'Phase 1, Bangalore'.
-    # {1,8} not {1,6}: handles longer addresses like 'Plot 23, Electronic City Phase 1, Bangalore'.
+    # PAT3: Flat/Plot/House/Door/No. prefix
     r'\b(?:flat|plot|house|door|apartment|no\.?)\s*(?:\d{1,4}[A-Za-z]?|[A-Za-z]\d{1,4})'
     r'(?:[\s,]+[A-Za-z0-9]{1,}){1,8}'
     r'|'
-    # PAT4: Street-type-FIRST languages (French: Rue de la Paix; Italian: Via Roma)
+    # PAT4: Street-type-FIRST languages
     r'\b(?:rue|via|calle)\s+[A-Za-z]{2,}(?:\s+[A-Za-z]{2,}){0,4}(?:\s*,\s*\d{1,5})?'
+    r'|'
+    # PAT5 (NEW): number + block/phase/stage (e.g. "Sector 21", "Phase 2", "Block A")
+    # The keyword MUST be preceded by a digit to avoid false matches on plain "block".
+    r'\b\d{1,4}[A-Za-z]?\s+(?:block|phase|stage)\b'
+    r'(?:\s*[A-Za-z0-9]{1,}(?:[\s,]+[A-Za-z0-9]{1,}){0,4})?'
     r')',
     re.IGNORECASE,
 )
-
 # ---------------------------------------------------------------------------
 # POSTCODE — global multi-country postcode detector
 #
@@ -3061,11 +3060,18 @@ def _validate_entity(ent: Dict[str, Any], text: str) -> bool:
         if len(digits) < 7:
             return False
     if label == "PERSON":
-        # Reject single-word PERSON if not in the known name list
-        words = span.split()
-        if len(words) == 1 and span.lower() not in COMMON_NAMES:
+        # Reject if it's only a single character
+        if len(span.strip()) <= 1:
             return False
-
+        # Reject single-word names that are not in the known list OR are in the blacklist
+        words = span.split()
+        if len(words) == 1:
+            low = span.lower()
+            if low not in COMMON_NAMES or low in PERSON_FALSE_POSITIVES:
+                return False
+        # Reject all-caps short tokens that look like abbreviations (e.g. "US", "AI")
+        if len(words) == 1 and span.isupper() and len(span) <= 3:
+            return False
     return True
 
 def resolve_overlaps(entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
