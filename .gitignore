@@ -28,3 +28,7 @@ PreSendAI_Complete_Setup_Guide.pdf
 fine-tuned-ner-model/
 ner_model_output/
 checkpoint-*/
+
+# Ignore the image and docs
+redacted.jpg
+redacted_test.pdf
