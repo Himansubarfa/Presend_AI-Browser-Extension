@@ -4204,7 +4204,7 @@ def _load_transformer_pipeline():
     """Load the fine‑tuned NER model once and cache it."""
     global _transformer_pipe
     if _transformer_pipe is None:
-        model_dir = os.path.join(os.path.dirname(__file__), "..", "fine-tuned-ner-model")
+        model_dir = os.path.join(os.path.dirname(__file__), "..", "fine-tuned-ner-model-v2")
         logger.info("Loading fine-tuned NER model from %s", model_dir)
         _transformer_pipe = pipeline(
             "token-classification",

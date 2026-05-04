@@ -16,7 +16,7 @@ from backend.errors import (
 
 # New imports for image/document processing
 from backend.detector import detect_entities
-from backend.ocr.image_processor import ocr_bboxes, redact_image
+from backend.ocr.image_processor import ocr_bboxes, redact_image, detect_faces
 from backend.document.pdf_processor import extract_text_from_pdf, redact_pdf
 from backend.document.docx_processor import extract_text_from_docx, redact_docx
 
@@ -27,6 +27,15 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Sensitive PII labels – only these will be redacted
+# ---------------------------------------------------------------------------
+SENSITIVE_LABELS = {
+    "PERSON", "EMAIL", "PHONE", "AADHAAR", "PAN", "PASSPORT",
+    "DRIVING_LICENCE", "DOB", "ADDRESS", "CARD", "GST", "IFSC",
+    "UPI", "VEHICLE_REG", "SALARY", "ID", "API_KEY", "PASSWORD"
+}
 
 
 def create_app(config_class=Config):
@@ -147,49 +156,48 @@ def create_app(config_class=Config):
         if not full_text.strip():
             return jsonify({"status": "ok", "redacted_image_base64": None, "entities": [], "message": "No text found in image."}), 200
 
-        # 4. PII detection
+        # 4. PII detection – only keep sensitive labels
         try:
             entities = detect_entities(full_text)
+            entities = [e for e in entities if e["label"] in SENSITIVE_LABELS]
         except Exception as e:
             logger.exception("PII detection failed")
             return jsonify({"error": f"Detection error: {str(e)}"}), 422
 
         logger.info("Detected %d entities", len(entities))
 
-        # 5. Map detected spans to bounding boxes
+        # 5. Map entities to OCR word bounding boxes (word‑overlap method)
         try:
-            bbox_at_char = [None] * len(full_text)
-            search_pos = 0
-            for w in words:
-                word_text = w["text"]
-                idx = full_text.find(word_text, search_pos)
-                if idx != -1:
-                    for i in range(idx, idx + len(word_text)):
-                        bbox_at_char[i] = w["bbox"]
-                    search_pos = idx + len(word_text)
-
             redaction_boxes = []
             for ent in entities:
-                start, end = ent["start"], ent["end"]
-                boxes = set()
-                for i in range(start, end):
-                    bbox = bbox_at_char[i]
-                    if bbox is not None:
-                        boxes.add(tuple(bbox))
-                for b in boxes:
-                    redaction_boxes.append({"bbox": list(b)})
+                ent_start, ent_end = ent["start"], ent["end"]
+                for w in words:
+                    idx = full_text.find(w["text"])
+                    if idx == -1:
+                        continue
+                    word_end = idx + len(w["text"])
+                    if idx < ent_end and word_end > ent_start:
+                        redaction_boxes.append({"bbox": w["bbox"]})
         except Exception as e:
             logger.exception("Bounding-box mapping failed")
             return jsonify({"error": f"Mapping error: {str(e)}"}), 422
 
-        # 6. Redact image
+        # 6. Detect faces and add their bounding boxes
+        try:
+            face_boxes = detect_faces(image_bytes)
+            redaction_boxes.extend(face_boxes)
+            logger.info("Detected %d faces", len(face_boxes))
+        except Exception as e:
+            logger.warning("Face detection skipped: %s", e)
+
+        # 7. Redact image (text + faces)
         try:
             redacted_bytes = redact_image(image_bytes, redaction_boxes)
         except Exception as e:
             logger.exception("Redaction failed")
             return jsonify({"error": f"Redaction error: {str(e)}"}), 422
 
-        # 7. Return base64
+        # 8. Return base64
         b64 = base64.b64encode(redacted_bytes).decode('utf-8')
         return jsonify({
             "status": "ok",
@@ -229,35 +237,44 @@ def create_app(config_class=Config):
             words = doc_data["words"]
             full_text = doc_data["full_text"]
 
-            # PII detection
+            # If no embedded text found, force OCR (scanned PDF)
+            if not full_text.strip():
+                logger.info("No embedded text found, forcing full OCR on PDF")
+                try:
+                    doc_data = extract_text_from_pdf(file_bytes, force_ocr=True)
+                    words = doc_data["words"]
+                    full_text = doc_data["full_text"]
+                except Exception as e:
+                    logger.exception("OCR fallback for PDF failed")
+                    return jsonify({"error": f"OCR fallback error: {str(e)}"}), 422
+
+            # PII detection – only sensitive labels
             entities = detect_entities(full_text)
+            entities = [e for e in entities if e["label"] in SENSITIVE_LABELS]
+            logger.info("Detected %d entities in document", len(entities))
 
             # Map entities to page & bounding boxes
-            bbox_at_char = [None] * len(full_text)
-            search_pos = 0
-            for w in words:
-                word_text = w["text"]
-                idx = full_text.find(word_text, search_pos)
-                if idx != -1:
-                    for i in range(idx, idx + len(word_text)):
-                        # store bbox + page number
-                        bbox_at_char[i] = (w["bbox"], w["page"])
-                    search_pos = idx + len(word_text)
-
+                       # Map entities to PDF words (word‑overlap method – robust to ordering)
             redactions = []
             for ent in entities:
-                start, end = ent["start"], ent["end"]
-                boxes = set()
-                for i in range(start, end):
-                    info = bbox_at_char[i]
-                    if info:
-                        bbox, page = info
-                        boxes.add((page, tuple(bbox)))
-                for page, bbox in boxes:
-                    redactions.append({"page": page, "bbox": list(bbox)})
-
+                ent_start, ent_end = ent["start"], ent["end"]
+                for w in words:
+                    word_text = w["text"]
+                    # find the word’s position in full_text (first occurrence is fine)
+                    idx = full_text.find(word_text)
+                    if idx == -1:
+                        continue
+                    word_end = idx + len(word_text)
+                    # If the word overlaps the entity span, redact its box
+                    if idx < ent_end and word_end > ent_start:
+                        redactions.append({
+                            "page": w["page"],
+                            "bbox": w["bbox"]
+                        })
             try:
                 redacted_bytes = redact_pdf(file_bytes, redactions)
+                if redacted_bytes[:4] != b'%PDF':
+                    raise ValueError("Redacted output is not a valid PDF")
             except Exception as e:
                 logger.exception("PDF redaction failed")
                 return jsonify({"error": f"PDF redaction error: {str(e)}"}), 422
@@ -273,23 +290,21 @@ def create_app(config_class=Config):
             para_info = doc_data["paragraphs"]
             doc_object = doc_data["doc_object"]
 
-            # PII detection
+            # PII detection – only sensitive labels
             entities = detect_entities(full_text)
+            entities = [e for e in entities if e["label"] in SENSITIVE_LABELS]
+            logger.info("Detected %d entities in document", len(entities))
 
-            # -----------------------------------------------
             # DOCX redaction: replace PII text in runs
-            # -----------------------------------------------
             char_offset = 0
             for para in para_info:
                 para_text = para["text"]
-                # for each entity, check if it falls within this paragraph
                 for ent in entities:
                     ent_start = ent["start"]
                     ent_end = ent["end"]
                     if ent_start >= char_offset and ent_end <= char_offset + len(para_text):
                         local_start = ent_start - char_offset
                         local_end = ent_end - char_offset
-                        # replace characters in runs that overlap
                         for run_info in para["runs"]:
                             r_start = run_info["start"]
                             r_end = run_info["end"]
@@ -301,9 +316,9 @@ def create_app(config_class=Config):
                                 overlap_end = min(r_end, local_end) - r_start
                                 for j in range(overlap_start, overlap_end):
                                     if j < len(new_chars):
-                                        new_chars[j] = '\u2588'  # full block character
+                                        new_chars[j] = '\u2588'
                                 run.text = ''.join(new_chars)
-                char_offset += len(para_text) + 1  # +1 for the newline we joined with
+                char_offset += len(para_text) + 1
 
             try:
                 redacted_bytes = redact_docx(doc_object)
