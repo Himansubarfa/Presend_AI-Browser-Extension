@@ -18,8 +18,9 @@
   "permissions": [
     "storage",
     "alarms",
-    "scripting",
-    "activeTab"
+   "scripting",
+   "activeTab",
+   "webRequest"
   ],
 
   "host_permissions": [
@@ -29,7 +30,7 @@
     "https://*.google.com/*",
     "https://www.deepseek.com/*",
     "https://chat.deepseek.com/*",
-    "https://calude.ai/*"
+    "https://claude.ai/*"
   ],
 
   "content_scripts": [
@@ -47,11 +48,14 @@
         "dom.js",
         "highlight.js",
         "api.js",
-        "content.js"
+        "content.js",
+       "file_interceptor.js"
       ],
       "run_at": "document_end"
     }
   ],
+
+  
 
   "action": {
     
@@ -67,4 +71,7 @@
   "background": {
     "service_worker": "background.js"
   }
+
+  
 }
+

@@ -32,3 +32,7 @@ checkpoint-*/
 # Ignore the image and docs
 redacted.jpg
 redacted_test.pdf
+redacted_test.docx
+server.py
+Dashboard
+/tests

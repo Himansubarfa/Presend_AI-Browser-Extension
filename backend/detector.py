@@ -4204,7 +4204,7 @@ def _load_transformer_pipeline():
     """Load the fine‑tuned NER model once and cache it."""
     global _transformer_pipe
     if _transformer_pipe is None:
-        model_dir = os.path.join(os.path.dirname(__file__), "..", "fine-tuned-ner-model-v2")
+        model_dir = os.path.join(os.path.dirname(__file__), "..", "fine-tuned-ner-model")
         logger.info("Loading fine-tuned NER model from %s", model_dir)
         _transformer_pipe = pipeline(
             "token-classification",
@@ -4436,18 +4436,226 @@ def resolve_overlaps(entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Main public entry point
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Post-processing fallbacks and entity cleaning
+# ---------------------------------------------------------------------------
+
+def _clean_entity_text(text: str, label: str) -> str:
+    """Remove trailing noise from an entity value based on its type."""
+    import re
+    if label == "PERSON":
+        # Name: only letters, spaces, dots. Remove trailing digits/garbage.
+        match = re.match(r'^([A-Za-z.\s]+)', text)
+        if match:
+            return match.group(1).strip()
+    elif label == "ADDRESS":
+        # Keep only lines that have a reasonable alphabetic ratio
+        lines = text.splitlines()
+        clean_lines = []
+        for line in lines:
+            alpha = sum(c.isalpha() for c in line)
+            if len(line) == 0 or alpha / max(len(line), 1) < 0.3:
+                continue
+            clean_lines.append(line.strip())
+        return ', '.join(clean_lines)
+    # For all other types, return as is
+    return text
+
+
+def _name_label_fallback(text: str, entities: List[Dict]) -> List[Dict]:
+    """If a line contains 'Name: <value>', ensure the value is tagged as PERSON."""
+    import re
+    lines = text.split('\n')
+    pos = 0
+    for line in lines:
+        match = re.match(r'(?i)Name\s*:\s*(.+)', line.strip())
+        if match:
+            name_part = match.group(1).strip()
+            if name_part:
+                name_part = _clean_entity_text(name_part, "PERSON")
+                if not name_part:
+                    continue
+                start = text.find(name_part, pos)
+                if start != -1:
+                    end = start + len(name_part)
+                    entities = [e for e in entities if not (e['start'] < end and e['end'] > start)]
+                    entities.append({
+                        'label': 'PERSON',
+                        'text': name_part,
+                        'start': start,
+                        'end': end,
+                    })
+        pos += len(line) + 1
+    return entities
+
+
+def _address_block_fallback(text: str, entities: List[Dict]) -> List[Dict]:
+    """
+    If a line starts with 'ADDRESS:' or 'Address:', grab all following lines
+    until a new field appears. Allow Aadhaar numbers to be included if
+    they are immediately followed by a pincode/state.
+    """
+    import re
+    lines = text.split('\n')
+    line_positions = []
+    pos = 0
+    for line in lines:
+        line_positions.append(pos)
+        pos += len(line) + 1
+
+    stop_pattern = re.compile(
+        r'^\s*(?:'
+        r'[A-Z]{2,}\s*:?'             # e.g. "GENDER", "ID NUMBER"
+        r'|\d{4}\s+\d{4}\s+\d{4}'     # Aadhaar
+        r'|[A-Z]{5}\d{4}[A-Z]'        # PAN
+        r'|\+\d'                       # phone
+        r'|[\w.+\-]+@'                # email
+        r')'
+    )
+
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].strip()
+        if not re.match(r'(?i)Address\s*:?\s*', stripped):
+            i += 1
+            continue
+
+        # Locate start of address content
+        if ':' in stripped:
+            after_colon = stripped.split(':', 1)[1].strip()
+            if after_colon:
+                start_idx = line_positions[i] + stripped.index(after_colon)
+            else:
+                i += 1
+                while i < len(lines) and not lines[i].strip():
+                    i += 1
+                if i >= len(lines):
+                    break
+                start_idx = line_positions[i]
+        else:
+            i += 1
+            while i < len(lines) and not lines[i].strip():
+                i += 1
+            if i >= len(lines):
+                break
+            start_idx = line_positions[i]
+
+        # Extend downwards until a definitive stop
+        end_line = i
+        for j in range(i + 1, len(lines)):
+            candidate = lines[j].strip()
+            if not candidate:
+                continue
+            if stop_pattern.match(candidate):
+                # Check if next non‑blank line looks like a continuation (pincode/state)
+                next_non_blank = None
+                for k in range(j + 1, len(lines)):
+                    nxt = lines[k].strip()
+                    if nxt:
+                        next_non_blank = nxt
+                        break
+                if next_non_blank and re.match(
+                    r'^\d{5,6}$|^(Karnataka|Maharashtra|Tamil Nadu|Gujarat|Rajasthan|West Bengal|Kerala|Punjab|Haryana|Delhi|Goa)$',
+                    next_non_blank, re.IGNORECASE
+                ):
+                    continue   # include the Aadhaar and the continuation
+                else:
+                    break
+            end_line = j
+
+        end_idx = line_positions[end_line] + len(lines[end_line])
+
+        full_addr = text[start_idx:end_idx].strip()
+        full_addr = _clean_entity_text(full_addr, "ADDRESS")
+        if full_addr:
+            # Remove overlapping entities
+            entities = [e for e in entities if not (e['start'] < end_idx and e['end'] > start_idx)]
+            entities.append({
+                'label': 'ADDRESS',
+                'start': start_idx,
+                'end': end_idx,
+                'text': full_addr
+            })
+        i = end_line + 1
+
+    return entities
+
+
+def _extend_address_across_lines(text: str, entities: List[Dict]) -> List[Dict]:
+    """
+    If an ADDRESS entity ends at a line break, extend it to include
+    following lines that do NOT look like a new field label.
+    """
+    import re
+    lines = text.split('\n')
+    line_start_positions = []
+    pos = 0
+    for line in lines:
+        line_start_positions.append(pos)
+        pos += len(line) + 1
+
+    new_field_pattern = re.compile(
+        r'(?i)^\s*(?:'
+        r'[A-Z]{2,}\s*:?'            # ALL CAPS label
+        r'|\d{4}\s+\d{4}\s+\d{4}'    # Aadhaar
+        r'|[A-Z]{5}\d{4}[A-Z]'       # PAN
+        r'|\+91\s?\d{10}'            # phone
+        r'|\w+@\w+\.\w+'             # email
+        r')'
+    )
+
+    new_entities = []
+    for ent in entities:
+        if ent['label'] != 'ADDRESS':
+            new_entities.append(ent)
+            continue
+
+        ent_start, ent_end = ent['start'], ent['end']
+
+        end_line = -1
+        for i, lpos in enumerate(line_start_positions):
+            if lpos <= ent_end < lpos + len(lines[i]) + 1:
+                end_line = i
+                break
+        if end_line == -1:
+            new_entities.append(ent)
+            continue
+
+        extended_end = ent_end
+        for next_line in range(end_line + 1, len(lines)):
+            candidate = lines[next_line].strip()
+            if not candidate:
+                continue
+            if new_field_pattern.match(candidate):
+                break
+            next_line_start = line_start_positions[next_line]
+            extended_end = next_line_start + len(lines[next_line])
+
+        if extended_end > ent_end:
+            new_entities.append({
+                'label': 'ADDRESS',
+                'start': ent_start,
+                'end': extended_end,
+                'text': text[ent_start:extended_end].strip()
+            })
+        else:
+            new_entities.append(ent)
+
+    return new_entities
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
 
 def detect_entities(raw_text: Any) -> List[Dict[str, Any]]:
-    """
-    Detect PII / named entities in *raw_text*.
-    Accepts any input; non-string values are coerced to str.
-    """
+    """Detect PII / named entities in *raw_text*."""
     if raw_text is None:
         return []
     if not isinstance(raw_text, str):
         try:
             raw_text = str(raw_text)
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.warning("Could not coerce input to str; returning empty.")
             return []
 
@@ -4457,10 +4665,8 @@ def detect_entities(raw_text: Any) -> List[Dict[str, Any]]:
 
     max_len: int = getattr(Config, "MAX_TEXT_LENGTH", 100_000)
     if len(raw_text) > max_len:
-        logger.warning(
-            "Input text (%d chars) exceeds MAX_TEXT_LENGTH (%d); truncating.",
-            len(raw_text), max_len,
-        )
+        logger.warning("Input text (%d chars) exceeds MAX_TEXT_LENGTH (%d); truncating.",
+                       len(raw_text), max_len)
         raw_text = raw_text[:max_len]
 
     raw_text = _sanitise(raw_text)
@@ -4472,7 +4678,6 @@ def detect_entities(raw_text: Any) -> List[Dict[str, Any]]:
     regex_spans    = detect_regex_entities(raw_text)
     transformer_spans = _detect_with_transformer(raw_text)
 
-    # Rename structured transformer labels to avoid conflict with regex priority
     structured_labels = {
         "EMAIL", "PHONE", "AADHAAR", "PAN", "PASSPORT", "DRIVING_LICENCE",
         "GST", "IFSC", "UPI", "CARD", "VEHICLE_REG", "IP", "URL",
@@ -4485,12 +4690,13 @@ def detect_entities(raw_text: Any) -> List[Dict[str, Any]]:
     all_spans = presidio_spans + spacy_spans + regex_spans + transformer_spans
     if not all_spans:
         return []
+
     all_spans = deduplicate_spans(all_spans)
 
     try:
         resolved = resolve_overlaps(all_spans)
     except ValueError:
-        logger.exception("resolve_overlaps encountered invalid entities; returning deduplicated spans.")
+        logger.exception("Overlap resolution failed; using deduplicated spans.")
         resolved = all_spans
 
     # Rename _TRANS labels back and validate
@@ -4500,5 +4706,14 @@ def detect_entities(raw_text: Any) -> List[Dict[str, Any]]:
             ent["label"] = ent["label"][:-6]
         if _validate_entity(ent, raw_text):
             final.append(ent)
+
+    # Apply fallbacks
+    final = _name_label_fallback(raw_text, final)
+    final = _address_block_fallback(raw_text, final)
+    final = _extend_address_across_lines(raw_text, final)
+
+    # Clean entity texts
+    for ent in final:
+        ent["text"] = _clean_entity_text(ent["text"], ent["label"])
 
     return final
